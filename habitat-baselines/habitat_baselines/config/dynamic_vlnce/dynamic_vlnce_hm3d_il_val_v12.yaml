@@ -1,0 +1,212 @@
+# @package _global_
+# IL测试配置文件 - 使用DAgger训练结果进行测试
+# 关键说明：
+# 1. 使用RL配置基类和RL训练器进行评估（因为DAgger训练器没有实现评估功能）
+# 2. 模型架构参数需要与训练配置保持一致（backbone、text_instruction等）
+# 3. IL和RL使用相同的策略网络架构（PointNavResNetPolicy），所以可以用RL训练器评估IL模型
+
+defaults:
+  - /benchmark/nav/socialnav_v2: falcon_hm3d_task
+  - /habitat_baselines: habitat_baselines_rl_config_base  # 使用RL配置基类进行评估
+  - /habitat/simulator/sim_sensors@habitat_baselines.eval.extra_sim_sensors.third_rgb_sensor: third_rgb_sensor 
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_1: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_2: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_3: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_4: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_5: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_6: single_fixed
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_stop: discrete_stop
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_move_forward: discrete_move_forward
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_turn_left: discrete_turn_left
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_turn_right: discrete_turn_right
+  - /habitat/task/actions@habitat.task.actions.agent_1_oracle_nav_randcoord_action_obstacle: oracle_nav_action 
+  - /habitat/task/actions@habitat.task.actions.agent_2_oracle_nav_randcoord_action_obstacle: oracle_nav_action 
+  - /habitat/task/actions@habitat.task.actions.agent_3_oracle_nav_randcoord_action_obstacle: oracle_nav_action 
+  - /habitat/task/actions@habitat.task.actions.agent_4_oracle_nav_randcoord_action_obstacle: oracle_nav_action 
+  - /habitat/task/actions@habitat.task.actions.agent_5_oracle_nav_randcoord_action_obstacle: oracle_nav_action 
+  - /habitat/task/actions@habitat.task.actions.agent_6_oracle_nav_randcoord_action_obstacle: oracle_nav_action 
+  - /habitat/task/lab_sensors@habitat.task.lab_sensors.agent_0_pointgoal_with_gps_compass: pointgoal_with_gps_compass_sensor
+  - _self_
+
+habitat:
+  dataset:
+    type: "DynamicVLNCE-v1"
+    split: val
+    data_path: "/share/home/u14004/dhj/Falcon-main/data/dynamic_dataset_final_v2/val_full/{scene}.json.gz"
+    scenes_dir: "/share/home/u14004/dhj/Falcon-main/data/scene_datasets/hm3d"
+    content_scenes: ["*"]
+  environment:
+    iterator_options:
+      shuffle: False # keep the same order
+  gym:
+    obs_keys: 
+      - agent_0_overhead_front_rgb  # 必须与训练配置保持一致
+      - agent_0_overhead_front_depth
+      - agent_0_pointgoal_with_gps_compass
+      - agent_0_localization_sensor
+      - agent_0_human_num_sensor  
+      - agent_0_oracle_humanoid_future_trajectory
+      - agent_0_falcon_instruction  # VLN instruction sensor
+      - agent_0_falcon_gt_action    # VLN GT action sensor
+  task:
+    actions:
+      agent_0_discrete_stop:
+        lin_speed: 0.0 
+        ang_speed: 0.0
+      agent_0_discrete_move_forward:
+        lin_speed: 25.0
+        ang_speed: 0.0
+        allow_dyn_slide: True
+      agent_0_discrete_turn_left:
+        lin_speed: 0.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_0_discrete_turn_right:
+        lin_speed: 0.0
+        ang_speed: -10.0
+        allow_dyn_slide: True
+      agent_1_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle 
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_2_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle 
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_3_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle 
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_4_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle 
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_5_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle 
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_6_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle 
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+
+habitat_baselines:
+  evaluate: True
+  verbose: True 
+  trainer_name: "dynamic_vln_trainer"  # 使用RL训练器进行评估（DAgger训练器没有实现评估功能）
+  torch_gpu_id: 0
+  tensorboard_dir: "evaluation_vln_val/dynamic_vlnce_clip_il_v2/hm3d/tb"
+  # video_dir: "evaluation_vln_val/dynamic_vlnce_clip_il_v2/hm3d/video"
+  test_episode_count: -1  # 限制测试episode数量
+  # eval_ckpt_path_dir: "/share/home/u14004/dhj/Falcon-main/evaluation-vln/dynamic_vlnce_clip_direct_il_v1/hm3d/checkpoints/ckpt.epoch_5.step_20095.pth"
+  # eval_ckpt_path_dir: "/share/home/u14004/dhj/Falcon-main/evaluation-vln/dynamic_vlnce_clip_direct_il_v1_new_wxy/hm3d/checkpoints_2/ckpt.epoch_4.step_16076.pth"
+  eval_ckpt_path_dir: "/share/home/u14004/dhj/Falcon-main/evaluation-vln/dynamic_vlnce_clip_direct_il_v1_new_wxy/hm3d/checkpoints_2/ckpt.epoch_9.step_36171.pth"
+  num_environments: 1  # 减少环境数量用于测试
+  checkpoint_folder: "evaluation_vln_val/il_v2_new_wxy_epoch_9/hm3d/checkpoints"
+  num_updates: -1
+  total_num_steps: 1e8
+  log_interval: 10
+  num_checkpoints: 200
+  # Force PyTorch to be single threaded as
+  # this improves performance considerably
+  force_torch_single_threaded: True
+  # Disable multiprocessing for stability
+  num_processes: 1
+  load_resume_state_config: False
+
+  evaluator:
+    _target_: habitat_baselines.rl.ppo.falcon_evaluator.FALCONEvaluator
+
+  eval:
+    use_ckpt_config: False 
+    should_load_ckpt: True
+    # video_option: ["disk"]
+
+  # RL配置 - 用于评估IL模型（IL和RL使用相同的策略网络架构）
+  # 注意：num_environments: 1 和 num_processes: 1 已确保单进程模式，避免多进程问题
+  rl:
+    agent:
+      type: "MultiAgentAccessMgr"
+      num_agent_types: 7
+      num_active_agents_per_type: [1, 1, 1, 1, 1, 1, 1]
+      num_pool_agents_per_type: [1, 1, 1, 1, 1, 1, 1]
+      agent_sample_interval: 20 
+      force_partner_sample_idx: -1
+    policy:
+      agent_0:
+        name: "PointNavResNetPolicy"  # 使用与训练相同的策略，支持CLIP架构
+        action_distribution_type: "categorical"  # 必须与训练配置保持一致
+    ppo:
+      # ppo params（测试时不需要，但需要保留配置结构）
+      clip_param: 0.2
+      ppo_epoch: 2
+      num_mini_batch: 1  # Must be <= num_environments (1)
+      value_loss_coef: 0.5
+      entropy_coef: 0.01
+      lr: 1e-4
+      eps: 1e-5
+      max_grad_norm: 0.5
+      num_steps: 64
+      use_gae: True
+      gamma: 0.99
+      tau: 0.95
+      use_linear_clip_decay: False
+      use_linear_lr_decay: True
+      reward_window_size: 50
+      use_normalized_advantage: False
+      hidden_size: 512
+      use_double_buffered_sampler: False
+
+    ddppo:
+      sync_frac: 0.6
+      distrib_backend: NCCL
+      # 模型参数 - 必须与训练配置保持一致
+      # 注意：IL模型没有critic，但RL训练器需要这些参数来初始化网络结构
+      pretrained_weights: /share/home/u14004/dhj/Falcon/pretrained_model/falcon_pretrained_25.pth
+      pretrained: False  # 测试时从checkpoint加载，不需要预训练权重
+      pretrained_encoder: False
+      train_encoder: False  # 测试时不训练
+      reset_critic: True  # IL模型没有critic，但需要重置以避免错误
+
+      # 模型参数 - 必须与训练配置保持一致
+      backbone: resnet50_clip_attnpool  # 使用CLIP架构进行文本-图像特征融合
+      rnn_type: LSTM
+      num_recurrent_layers: 2
+      # 文本指令处理配置 - 必须与训练配置保持一致
+      use_text_instruction: True
+      instruction_matching_mode: "episode_based"  # 基于episode的指令匹配
+      text_encoder_dim: 2048
+      fusion_method: attention
+      clip_visual_sensors:
+        # RGB传感器列表（按处理顺序，支持多个视角融合）
+        rgb_keys:
+          - overhead_front_rgb  # 俯视前方RGB（默认启用）
+          # - third_rgb  # 第三视角RGB（取消注释以启用多视角融合）
+          # - articulated_agent_jaw_rgb  # 第一人称RGB（取消注释以启用）
+        
+        # Depth传感器列表（按处理顺序，支持多个视角融合）
+        depth_keys:
+          - overhead_front_depth  # 俯视前方深度（默认启用）
+          # - third_depth  # 第三视角深度（取消注释以启用多视角融合）
+          # - articulated_agent_jaw_depth  # 第一人称深度（取消注释以启用）
+        
+        # 多视角融合模式（当有多个RGB或depth传感器时生效）
+        # - "average": 特征级平均融合（内存友好，推荐）
+        # - "concat": 特征拼接后线性投影（增加参数量）
+        # - "attention": 自注意力加权融合（效果最好，但计算量大）
+        fusion_mode: "average"
+        
+        # 是否在融合前对每个视角的特征进行归一化（推荐True）
+        normalize_before_fusion: True

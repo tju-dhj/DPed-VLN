@@ -1,0 +1,271 @@
+# @package _global_
+# 直接从文件系统读取数据进行初始IL训练配置文件
+# 不经过模拟器，直接从collect_data目录读取所有episode数据
+# 关键说明：
+# 1. 这是直接IL训练阶段，跳过数据采集，直接从文件系统读取已有数据
+# 2. 使用direct_il trainer，直接从collect_data目录读取RGB、深度、指令、动作等数据
+# 3. 训练得到的ckpt可以直接用于第二阶段的DAgger迭代训练
+# 注意：虽然不进入模拟器，但仍需要habitat配置以满足配置结构要求
+
+defaults:
+  - /benchmark/nav/socialnav_v2: falcon_hm3d_task_for_train_vln
+  - /habitat_baselines: habitat_baselines_il_config_base  # 使用IL配置基类
+  - /habitat/simulator/sim_sensors@habitat_baselines.eval.extra_sim_sensors.third_rgb_sensor: third_rgb_sensor 
+  - /habitat_baselines/il/policy@habitat_baselines.il.policy.agent_1: single_fixed
+  - /habitat_baselines/il/policy@habitat_baselines.il.policy.agent_2: single_fixed
+  - /habitat_baselines/il/policy@habitat_baselines.il.policy.agent_3: single_fixed
+  - /habitat_baselines/il/policy@habitat_baselines.il.policy.agent_4: single_fixed
+  - /habitat_baselines/il/policy@habitat_baselines.il.policy.agent_5: single_fixed
+  - /habitat_baselines/il/policy@habitat_baselines.il.policy.agent_6: single_fixed
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_stop: discrete_stop
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_move_forward: discrete_move_forward
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_turn_left: discrete_turn_left
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_turn_right: discrete_turn_right
+  - /habitat/task/actions@habitat.task.actions.agent_1_oracle_nav_randcoord_action_obstacle: oracle_nav_action 
+  - /habitat/task/actions@habitat.task.actions.agent_2_oracle_nav_randcoord_action_obstacle: oracle_nav_action 
+  - /habitat/task/actions@habitat.task.actions.agent_3_oracle_nav_randcoord_action_obstacle: oracle_nav_action 
+  - /habitat/task/actions@habitat.task.actions.agent_4_oracle_nav_randcoord_action_obstacle: oracle_nav_action 
+  - /habitat/task/actions@habitat.task.actions.agent_5_oracle_nav_randcoord_action_obstacle: oracle_nav_action 
+  - /habitat/task/actions@habitat.task.actions.agent_6_oracle_nav_randcoord_action_obstacle: oracle_nav_action 
+  - /habitat/task/lab_sensors@habitat.task.lab_sensors.agent_0_pointgoal_with_gps_compass: pointgoal_with_gps_compass_sensor
+  - _self_
+
+habitat:
+  dataset:
+    split: train
+    type: DynamicVLNCE-v1  # 使用DynamicVLNCE数据集类型（虽然不真正加载，但需要满足配置结构）
+    data_path: "/share/home/u19666033/dhj/DPed_pro/dped_pro_resplit/train/{scene}.json.gz"
+    scenes_dir: "/share/home/u19666033/dhj/DPed_pro/data/scene_datasets/hm3d"
+    content_scenes: ["*"]
+  environment:
+    iterator_options:
+      shuffle: True
+      cycle: True
+  gym:
+    obs_keys:
+      - agent_0_overhead_front_rgb
+      - agent_0_overhead_front_depth
+      - agent_0_starting_point_gps_compass
+      - agent_0_localization_sensor
+      - agent_0_human_num_sensor
+      - agent_0_oracle_humanoid_future_trajectory
+      - agent_0_falcon_instruction
+      - agent_0_falcon_gt_action
+  task:
+    actions:
+      agent_0_discrete_stop:
+        lin_speed: 0.0 
+        ang_speed: 0.0
+      agent_0_discrete_move_forward:
+        lin_speed: 30.0
+        ang_speed: 0.0
+        allow_dyn_slide: True
+      agent_0_discrete_turn_left:
+        lin_speed: 0.0
+        ang_speed: 31.415926535897
+        allow_dyn_slide: True
+      agent_0_discrete_turn_right:
+        lin_speed: 0.0
+        ang_speed: -31.415926535897
+        allow_dyn_slide: True
+      agent_1_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle 
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_2_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle 
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_3_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle 
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_4_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle 
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_5_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle 
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_6_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle 
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+
+habitat_baselines:
+  evaluate: False
+  verbose: True
+  trainer_name: "direct_il"  # 使用direct_il训练器（直接从文件读取数据）
+  torch_gpu_id: 0
+  tensorboard_dir: "evaluation-vlnce-dpedpro/dynamic_vlnce_clip_direct_il_aligned_full/hm3d/tb"
+  # video_dir: "evaluation-vln/dynamic_vlnce_clip_diresct_il_v1/hm3d/video"
+  test_episode_count: -1
+  checkpoint_folder: "evaluation-vlnce-dpedpro/dynamic_vlnce_clip_direct_il_aligned_full/hm3d/checkpoints"
+  num_updates: -1
+  total_num_steps: 15000000
+  log_interval: 100  # 每100个batch输出一次日志，减少I/O开销
+  log_file: "evaluation-vlnce-dpedpro/dynamic_vlnce_clip_direct_il_aligned_full/hm3d/train.log"
+  num_checkpoints: 200  # 更频繁保存checkpoint，便于长任务中断后恢复
+  checkpoint_interval: 1  # 每5个epoch保存一次，避免全量训练生成过多ckpt
+  force_torch_single_threaded: False  # 允许多线程以提高CPU-GPU数据传输效率
+  load_resume_state_config: False  # RL训练使用，IL训练自动从latest.pth恢复
+
+  eval:
+    use_ckpt_config: False
+    should_load_ckpt: True
+
+
+  # IL (Imitation Learning) 配置
+  # 直接从文件系统读取数据进行训练
+  il:
+    # 通用IL超参数
+    epochs: 200
+    batch_size: 1
+    use_amp: False
+    use_iw: False  # 先关掉 inflection weighting，排除其对收敛的干扰
+    inflection_weight_coef: 1.0  # 暂时设为 1.0（等价于关闭）
+    class_weight_enabled: False  # 与已验证的aligned overfit配置一致，先使用普通CE
+    # 数据加载优化参数（加速训练）
+    dataloader_num_workers: 0 # 数据加载器工作进程数（设为0避免worker崩溃和malloc错误）
+    pin_memory: False  # 关闭pin_memory以避免内存管理冲突
+    
+    # 分布式训练配置（可选）
+    distributed:
+      enabled: False  # 是否启用分布式训练
+      backend: "nccl"  # 分布式后端（nccl用于GPU，gloo用于CPU）
+      init_method: "env://"  # 初始化方法（env://表示从环境变量读取）
+      world_size: -1  # 总进程数（-1表示从环境变量读取）
+      rank: -1  # 当前进程rank（-1表示从环境变量读取）
+      local_rank: -1  # 本地rank（-1表示从环境变量读取）
+      find_unused_parameters: False  # DDP的find_unused_parameters参数
+      broadcast_buffers: True  # DDP的broadcast_buffers参数
+      gradient_as_bucket_view: False  # DDP的gradient_as_bucket_view参数
+    
+    # BaseILTrainer需要的配置项
+    eval_save_results: False  # 是否保存评估结果
+    log_metrics: False  # 是否记录指标到日志文件
+    output_log_dir: "evaluation-vlnce-dpedpro/dynamic_vlnce_clip_direct_il_aligned_full/hm3d/logs"  # 日志输出目录
+    results_dir: "evaluation-vlnce-dpedpro/dynamic_vlnce_clip_direct_il_aligned_full/hm3d/results/{split}"  # 结果保存目录
+    
+    # Resume state配置（用于SLURM作业恢复）
+    save_resume_state_interval: 10  # 每10个epoch保存一次resume state
+    save_state_batch_only: False  # 是否只在SLURM batch job中保存
+
+    # 多智能体配置（虽然direct_il不真正使用，但需要满足配置结构）
+    agent:
+      type: "MultiAgentAccessMgr"
+      num_agent_types: 7
+      num_active_agents_per_type: [1, 1, 1, 1, 1, 1, 1]
+      num_pool_agents_per_type: [1, 1, 1, 1, 1, 1, 1]
+      agent_sample_interval: 20
+      force_partner_sample_idx: -1
+
+    # 策略配置 - agent_0使用PointNavResNetPolicy（支持CLIP架构）
+    policy:
+      agent_0:
+        name: "PointNavResNetPolicy"  # 使用与ddppo相同的策略，支持CLIP架构
+        action_distribution_type: "categorical"  # 必须显式指定为离散动作分布
+
+    # 模型和优化器配置
+    model:
+      hidden_size: 512
+      # CLIP架构相关参数
+      backbone: resnet50_clip_attnpool  # 使用CLIP架构进行文本-图像特征融合
+      rnn_type: LSTM
+      num_recurrent_layers: 2
+      # 文本指令处理配置
+      use_text_instruction: True
+      instruction_matching_mode: "episode_based"  # 基于episode的指令匹配
+      text_encoder_dim: 2048
+      fusion_method: attention
+      # CLIP视觉传感器配置 - 指定CLIP使用的RGB和Depth传感器键名（无agent_0_前缀）
+      clip_visual_sensors:
+        rgb_keys:
+          - overhead_front_rgb
+        depth_keys:
+          - overhead_front_depth
+        fusion_mode: "attention"
+        normalize_before_fusion: True
+      # 预训练权重配置
+      # # pretrained_weights: /share/home/u14004/dhj/Falcon-main/evaluation-vln/dynamic_vlnce_clip_direct_il_v1/hm3d/checkpoints/ckpt.epoch_5.step_20095.pth  # 注释掉，不使用预训练权重
+      # pretrained: False  # ✓ 关键参数：设为False表示不加载预训练权重，从头训练
+      # pretrained_encoder: True
+      # train_encoder: False 
+
+      # # Visual encoder backbone
+      # pretrained_weights: /share/home/u14004/dhj/Falcon-main/evaluation-vln/dynamic_vlnce_clip_direct_il_v1/hm3d/checkpoints/ckpt.epoch_5.step_20095.pth
+      # # Initialize with pretrained weights
+      # pretrained: True # For finetune
+      # # Initialize just the visual encoder backbone with pretrained weights
+      # pretrained_encoder: False
+      # # Whether the visual encoder backbone will be trained.
+      # train_encoder: False
+      # Visual encoder backbone
+      # pretrained_weights: /share/home/u14004/dhj/Falcon-main/evaluation-vln/dynamic_vlnce_clip_rl_v1/hm3d/checkpoints/ckpt.73.pth
+      pretrained_weights: /share/home/u19666033/dhj/DPed_pro/pretrained_model/falcon_pretrained_25.pth
+      
+      # Initialize with pretrained weights
+      pretrained: True  # 加载其他模块的预训练权重（CLIP视觉编码器权重会被跳过）
+      # Initialize just the visual encoder backbone with pretrained weights
+      pretrained_encoder: False
+      # Whether the visual encoder backbone will be trained.
+      train_encoder: False  # 先冻结视觉编码器，避免大模型特征被扰动
+
+    optim:
+      lr: 1e-4  # 降低学习率，稳定训练
+      eps: 1e-5
+      max_grad_norm: 0.5
+      use_lr_scheduler: False  # 全量首轮训练先固定学习率，避免过早衰减
+
+    # DirectIL特定配置（直接从文件系统读取数据）
+    direct_il:
+      # 数据格式类型: "json" 或 "directory"
+      # - "json": 从 dped_pro_resplit/train/*.json 读取数据
+      # - "directory": 从 data_root/scene/episode_id/ 目录结构读取数据
+      dataset_type: "json"
+      # 窗口大小：
+      # - 0: 整条episode作为一个RNN序列训练，和aligned debug配置一致
+      # - >0: 拆成固定长度滑动窗口
+      window_size: 0
+      # 数据根目录：包含所有episode数据的目录
+      # 对于 json 格式: 包含 {scene}.json 文件的目录，如 dped_pro_resplit/train
+      # 对于 directory 格式: 目录结构应该是: data_root/scene_name/episode_id/{action, depth, instruction_*, ...}
+      data_root: "/share/home/u19666033/dhj/DPed_pro/dped_pro_resplit/train"
+      # RGB数据根目录列表：用于从多个路径查找RGB图像
+      # 支持从多个目录查找RGB，程序会按顺序在每个目录查找，找到第一个存在的文件就使用
+      # 目录结构: rgb_data_roots/scene_name/episode_id/rgb/
+      # 例如:
+      #   rgb_data_roots:
+      #     - "/share/home/u19666033/dhj/DPed_pro/data/collect_data/train"
+      #     - "/share/home/u19666033/dhj/DPed_pro/data/collect_data/val"
+      rgb_data_roots:
+        - "/share/home/u19666033/dhj/DPed_pro/data/collect_data/train"
+        - "/share/home/u19666033/dhj/DPed_pro/data/collect_data/val"
+      # 最大episode数量：-1表示扫描data_root下所有scene json，并展开每个json内所有episodes
+      max_episodes: -1
+      # 最大episode长度（步数），超过此长度的episode将被截断以防止OOM
+      max_episode_length: 400 # 默认400步，可根据内存情况调整（300/500/600）
+      # 与RL里的OracleHumanoidFutureTrajectorySensor/future trajectory auxiliary loss保持一致
+      future_step: 4
+      # 指令优先级列表（按优先级从高到低）
+      # 训练器会按照此顺序查找指令文件，找到第一个存在的有效指令文件就使用它
+      instruction_priority:
+        - instruction_vl_level_1
+      # 诊断用：跳过JPEG解码，排查 native 崩溃 (malloc_consolidate)
+      disable_rgb_decode: False
+      # 动作离散化参数，与RL配置/数据采集动作保持一致
+      forward_step_size: 0.25
+      turn_angle_deg: 10.0

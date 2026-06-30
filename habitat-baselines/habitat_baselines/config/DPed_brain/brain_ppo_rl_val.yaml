@@ -1,0 +1,101 @@
+# ==============================================================================
+# 文件: brain_ppo_rl_val.yaml
+# 描述: Brain增强PPO评估配置
+# ==============================================================================
+
+"""
+BrainPPOEvaluator评估配置
+==========================
+
+该配置文件定义了Brain增强的VLN PPO评估参数，
+用于在验证集上评估训练好的模型。
+
+主要配置项：
+- evaluator_name: brain_ppp_evaluator
+- brain模块: 启用/禁用Brain
+- 评估参数: episode数量、种子等
+
+使用方式：
+```bash
+python -m habitat_baselines.run \
+    --config-name=DPed_brain/brain_ppo_rl_val \
+    habitat_baselines.checkpoint_folder=/path/to/checkpoint
+```
+"""
+
+# =============================================================================
+# 顶层配置
+# =============================================================================
+
+defaults:
+  - /DPed_brain/brain_ppo_train_v2_ddppo  # 继承训练配置
+  - override /habitat: habitat_config
+  - override /habitat_baselines: base_eval_config
+
+# =============================================================================
+# Habitat环境配置
+# =============================================================================
+
+habitat:
+  # 环境配置
+  environment:
+    max_episode_steps: 400              # 最大episode长度
+
+  # 数据集配置 - 使用验证集
+  dataset:
+    type: "DynamicVLNCE-v1"
+    split: val_seen                      # 验证集分割: val_seen, val_unseen
+    data_path: "data/datasets/dynamic_vlnce_v1/{split}.json.gz"
+
+# =============================================================================
+# Habitat-Baselines评估配置
+# =============================================================================
+
+habitat_baselines:
+  # ----------------------------------------
+  # 评估器配置
+  # ----------------------------------------
+  evaluator:
+    type: "brain_ppo_evaluator"          # Brain增强的评估器
+
+  # 评估参数
+  num_evaluation_episodes: 100          # 评估episode数量
+  evaluation_interval: 1                  # 每N个epoch评估一次
+
+  # 检查点配置
+  checkpoint_folder: null               # 模型checkpoint路径
+  video_dir: "eval_videos/brain_ppo"    # 视频输出目录
+
+  # ----------------------------------------
+  # Tensorboard配置
+  # ----------------------------------------
+  tensorboard_dir: "tb_logs/brain_ppo_val"
+
+# =============================================================================
+# Brain模块配置 - 评估时启用完整功能
+# =============================================================================
+
+  brain:
+    enabled: true                        # 评估时启用Brain
+    pedestrian_enabled: true             # 启用行人检测
+    model_type: "gemma4_e2b"             # Gemma模型类型
+
+    # 评估专用配置
+    eval_with_brain: true                # 评估时使用Brain决策
+    record_video: true                  # 录制评估视频
+    save_pedestrian_trajectory: true    # 保存行人轨迹
+
+    # 冻结配置 - 评估时全部冻结
+    freeze_brain: true                   # 冻结Brain模型
+    freeze_pedestrian: true             # 冻结行人检测器
+    freeze_clip: true                   # 冻结CLIP编码器
+
+# =============================================================================
+# 其他配置
+# =============================================================================
+
+hydra:
+  job:
+    name: "brain_ppo_rl_val"
+  run:
+    dir: "outputs/brain_ppo_val/${hydra.job.num}/${now:%Y-%m-%d_%H-%M-%S}"

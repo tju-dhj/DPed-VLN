@@ -1,0 +1,203 @@
+# @package _global_
+# ==============================================================================
+# 文件: robot_deploy_4a.yaml
+# 描述: 4动作 机器人部署配置（无Brain，基础策略网络）
+#       - 动作空间: STOP / FORWARD / LEFT / RIGHT
+#       - 使用 dped_trainer_server (Flask HTTP Server)
+#       - 适用于已训练好的 4动作 checkpoint
+# ==============================================================================
+#
+# 启动命令:
+#   python -u -m habitat_baselines.run \
+#     --config-name=DPed_brain_new/robot_deploy/robot_deploy_4a
+#
+# 服务端端口: 32145 (默认)
+# 机器人端通过 HTTP POST 调用 /reset_hiddens 和 /predict_action
+# ==============================================================================
+
+defaults:
+  - /benchmark/nav/socialnav_v2: falcon_hm3d_task
+  - /habitat_baselines: habitat_baselines_rl_config_base
+  - /habitat/simulator/sim_sensors@habitat_baselines.eval.extra_sim_sensors.third_rgb_sensor: third_rgb_sensor
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_1: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_2: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_3: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_4: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_5: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_6: single_fixed
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_stop: discrete_stop
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_move_forward: discrete_move_forward
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_turn_left: discrete_turn_left
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_turn_right: discrete_turn_right
+  - /habitat/task/actions@habitat.task.actions.agent_1_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+  - /habitat/task/actions@habitat.task.actions.agent_2_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+  - /habitat/task/actions@habitat.task.actions.agent_3_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+  - /habitat/task/actions@habitat.task.actions.agent_4_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+  - /habitat/task/actions@habitat.task.actions.agent_5_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+  - /habitat/task/actions@habitat.task.actions.agent_6_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+  - /habitat/task/lab_sensors@habitat.task.lab_sensors.agent_0_pointgoal_with_gps_compass: pointgoal_with_gps_compass_sensor
+  - _self_
+
+habitat:
+  environment:
+    max_episode_steps: 500
+    iterator_options:
+      shuffle: False
+  dataset:
+    type: "DynamicVLNCE-v1"
+    split: val
+    data_path: "/share/home/u19666033/dhj/DPed_pro/dped_pro_resplit/val_unseen/{scene}.json.gz"
+    scenes_dir: "/share/home/u19666033/dhj/DPed_pro/data/scene_datasets/hm3d"
+    content_scenes: ["*"]
+  gym:
+    obs_keys:
+      - agent_0_overhead_front_rgb
+      - agent_0_overhead_front_depth
+      - agent_0_starting_point_gps_compass
+      - agent_0_localization_sensor
+      - agent_0_human_num_sensor
+      - agent_0_oracle_humanoid_future_trajectory
+      - agent_0_falcon_instruction
+      - agent_0_falcon_gt_action
+  task:
+    actions:
+      agent_0_discrete_stop:
+        lin_speed: 0.0
+        ang_speed: 0.0
+      agent_0_discrete_move_forward:
+        lin_speed: 30.0
+        ang_speed: 0.0
+        allow_dyn_slide: True
+      agent_0_discrete_turn_left:
+        lin_speed: 0.0
+        ang_speed: 31.415926535897
+        allow_dyn_slide: True
+      agent_0_discrete_turn_right:
+        lin_speed: 0.0
+        ang_speed: -31.415926535897
+        allow_dyn_slide: True
+      agent_1_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_2_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_3_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_4_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_5_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_6_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+
+habitat_baselines:
+  evaluate: True
+  verbose: True
+  trainer_name: "dped_trainer_server"
+  torch_gpu_id: 0
+  tensorboard_dir: "robot_deploy/4a_base/hm3d/tb"
+  test_episode_count: -1
+  num_environments: 1
+  checkpoint_folder: "robot_deploy/4a_base/hm3d/checkpoints"
+  num_updates: -1
+  total_num_steps: 1e8
+  log_interval: 10
+  num_checkpoints: 0
+  force_torch_single_threaded: True
+  num_processes: 1
+  load_resume_state_config: False
+
+  # ========== 4动作 checkpoint 路径（请根据实际checkpoint修改） ==========
+  eval_ckpt_path_dir: "/share/home/u19666033/dhj/DPed_pro/evaluation-vlnce-dpedpro2/rl/4a-base-start/hm3d/checkpoints/ckpt.8.pth"
+
+  # ========== Brain 模块: 禁用 ==========
+  brain:
+    enabled: false
+
+  evaluator:
+    _target_: habitat_baselines.rl.ppo.falcon_evaluator.FALCONEvaluator
+
+  eval:
+    use_ckpt_config: False
+    should_load_ckpt: True
+
+  rl:
+    agent:
+      type: "MultiAgentAccessMgr"
+      num_agent_types: 7
+      num_active_agents_per_type: [1, 1, 1, 1, 1, 1, 1]
+      num_pool_agents_per_type: [1, 1, 1, 1, 1, 1, 1]
+      agent_sample_interval: 20
+      force_partner_sample_idx: -1
+    policy:
+      agent_0:
+        name: "PointNavResNetPolicy"
+    ppo:
+      clip_param: 0.2
+      ppo_epoch: 2
+      num_mini_batch: 1
+      value_loss_coef: 0.5
+      entropy_coef: 0.01
+      lr: 1e-4
+      eps: 1e-5
+      max_grad_norm: 0.5
+      num_steps: 64
+      use_gae: True
+      gamma: 0.99
+      tau: 0.95
+      use_linear_clip_decay: False
+      use_linear_lr_decay: True
+      reward_window_size: 50
+      use_normalized_advantage: False
+      hidden_size: 512
+      use_double_buffered_sampler: False
+
+    ddppo:
+      force_distributed: False
+      sync_frac: 0.6
+      distrib_backend: NCCL
+      pretrained_weights: /share/home/u19666033/dhj/DPed_pro/pretrained_model/falcon_noaux_25.pth
+      pretrained: False
+      pretrained_encoder: False
+      train_encoder: False
+      reset_critic: True
+      backbone: resnet50_clip_attnpool
+      rnn_type: LSTM
+      num_recurrent_layers: 2
+      clip_visual_sensors:
+        rgb_keys:
+          - overhead_front_rgb
+        depth_keys:
+          - overhead_front_depth
+        fusion_mode: "average"
+        normalize_before_fusion: True
+      gps_sensor_type: "starting_point"
+
+hydra:
+  job:
+    name: "robot_deploy_4a"
+  run:
+    dir: "outputs/robot_deploy_4a/${now:%Y-%m-%d_%H-%M-%S}"

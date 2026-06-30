@@ -1,0 +1,293 @@
+# @package _global_
+#
+# DPed_pro 6动作空间专家轨迹采集配置
+#
+# 对应采集器：DPed_pro_expert.py
+#   trainer_name: "expert_data_collector_6action"
+#
+# 动作空间（6动作）：
+#   0 : STOP         — 停止并终止轨迹（到达目标时）
+#   1 : MOVE_FORWARD — 前进
+#   2 : TURN_LEFT    — 左转
+#   3 : TURN_RIGHT   — 右转
+#   4 : PAUSE        — 原地暂停（不终止轨迹），用于礼让行人
+#   5 : MOVE_BACKWARD— 后退，用于紧急危险躲避
+#
+# 规划器策略（SFM + ORCA 混合）：
+#   L0  到达目标    → STOP(0)
+#   L1  极度危险    → BACKWARD(5)（行人 < 0.70m，在正前方）
+#   L2  礼让等待    → PAUSE(4)  （行人迎面 + dist < 1.60m）
+#   L3  SFM+ORCA   → 修正目标角度后 FORWARD/LEFT/RIGHT
+#   L4  正常导航   → Oracle 最短路径 → FORWARD/LEFT/RIGHT
+#
+# 用法示例：
+#   python -m habitat_baselines.run \
+#       --config-name DPed_pro/collect_data/collect_6action_train \
+#       habitat_baselines.num_environments=8
+
+defaults:
+  # ── 任务基础（1机器人 + 6行人）──────────────────────────────────
+  - /benchmark/nav/socialnav_v2: falcon_hm3d_task_for_train
+  - /habitat_baselines: habitat_baselines_rl_config_base
+
+  # ── 第三视角传感器（用于保存视频 & third_rgb 数据）────────────────
+  - /habitat/simulator/sim_sensors@habitat_baselines.eval.extra_sim_sensors.third_rgb_sensor: third_rgb_sensor
+
+  # ── 行人策略（固定 oracle 策略，agent_0 策略不参与训练）───────────
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_1: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_2: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_3: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_4: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_5: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_6: single_fixed
+
+  # ── agent_0 的 6 个离散动作（在 falcon/additional_action.py 中注册）─
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_stop: discrete_stop
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_move_forward: discrete_move_forward
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_turn_left: discrete_turn_left
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_turn_right: discrete_turn_right
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_pause: discrete_pause
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_move_backward: discrete_move_backward
+
+  # ── 行人 oracle 导航动作（带障碍物避让）────────────────────────────
+  - /habitat/task/actions@habitat.task.actions.agent_1_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+  - /habitat/task/actions@habitat.task.actions.agent_2_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+  - /habitat/task/actions@habitat.task.actions.agent_3_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+  - /habitat/task/actions@habitat.task.actions.agent_4_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+  - /habitat/task/actions@habitat.task.actions.agent_5_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+  - /habitat/task/actions@habitat.task.actions.agent_6_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+
+  # ── 额外传感器（点目标 GPS+指南针）───────────────────────────────
+  - /habitat/task/lab_sensors@habitat.task.lab_sensors.agent_0_pointgoal_with_gps_compass: pointgoal_with_gps_compass_sensor
+
+  - _self_
+
+# ══════════════════════════════════════════════════════════════════
+#  habitat（任务 & 数据集）
+# ══════════════════════════════════════════════════════════════════
+habitat:
+  environment:
+    max_episode_steps: 1000   # 增加到1000步，给专家策略更多时间到达目标（原500步不足）
+
+  dataset:
+    split: train_part1        # 使用 train_part1 分割（与 dynamic_data_part1.yaml 一致）
+
+  gym:
+    obs_keys:
+      # ── 视觉观测 ────────────────────────────────────────────────
+      - agent_0_third_rgb                        # 第三视角 RGB（用于视频录制 & 轨迹可视化）
+      - agent_0_overhead_front_rgb               # 前置俯视 RGB（主要采集视角）
+      - agent_0_overhead_front_depth             # 前置俯视 深度
+      - agent_0_articulated_agent_jaw_rgb        # 第一视角 RGB（备用）
+      - agent_0_articulated_agent_jaw_depth      # 第一视角 深度
+      # ── 导航信息 ────────────────────────────────────────────────
+      - agent_0_pointgoal_with_gps_compass       # 点目标（距离 + 方向角）
+      - agent_0_localization_sensor              # 机器人位置 + 朝向角（专家动作计算用）
+      - agent_0_main_oracle_shortest_path_sensor # Oracle 最短路径（SFM 规划器驱动力方向来源）
+      # ── 行人感知 ────────────────────────────────────────────────
+      - agent_0_human_num_sensor                 # 场景中的行人数量（标量）
+      - agent_0_human_velocity_sensor            # 行人位置 + 朝向 + 速度（SFM/ORCA 核心输入）
+      - agent_0_oracle_humanoid_future_trajectory # 行人未来轨迹预测（辅助分析用）
+
+  task:
+    measurements:
+      success:
+        type: Success
+        success_distance: 3.0   # 到达目标判定半径（米），与 expert_data_collection.goal_radius 对应
+      human_collision:
+        type: HumanCollision
+
+    actions:
+      # ── agent_0 动作参数（与 dynamic_vlnce_hm3d_train_v2_6actions.yaml 对齐）──
+      agent_0_discrete_stop:
+        lin_speed: 0.0
+        ang_speed: 0.0
+
+      agent_0_discrete_move_forward:
+        lin_speed: 30.0         # 与原版 dynamic_data_part1.yaml 一致
+        ang_speed: 0.0
+        allow_dyn_slide: True
+
+      agent_0_discrete_turn_left:
+        lin_speed: 0.0
+        ang_speed: 31.415926535897   # π * 10 rad/s ≈ 180°/s
+        allow_dyn_slide: True
+
+      agent_0_discrete_turn_right:
+        lin_speed: 0.0
+        ang_speed: -31.415926535897
+        allow_dyn_slide: True
+
+      # 动作4：PAUSE — 原地暂停，不终止任务（DiscretePauseAction）
+      agent_0_discrete_pause:
+        lin_speed: 0.0
+        ang_speed: 0.0
+        allow_dyn_slide: False   # 不滑动，保持原位
+
+      # 动作5：BACKWARD — 后退（DiscreteMoveBackwardAction）
+      agent_0_discrete_move_backward:
+        lin_speed: -30.0        # 负值表示后退，大小与前进对称
+        ang_speed: 0.0
+        allow_dyn_slide: True
+
+      # ── 行人动作参数（与 dynamic_data_part1.yaml 一致）──────────
+      agent_1_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+
+      agent_2_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+
+      agent_3_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+
+      agent_4_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+
+      agent_5_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+
+      agent_6_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+
+# ══════════════════════════════════════════════════════════════════
+#  habitat_baselines
+# ══════════════════════════════════════════════════════════════════
+habitat_baselines:
+  evaluate: False
+  verbose: True
+
+  # ── 关键：使用 DPed_pro_expert.py 中注册的采集器 ────────────────
+  trainer_name: "expert_data_collector_6action"
+
+  torch_gpu_id: 0
+  video_dir: "/share/home/u19666033/dhj/DPed_pro/data/DPed_pro/train_1/video"
+  tensorboard_dir: "logs/DPed_pro/collect_6action/tb"
+  test_episode_count: -1
+  num_environments: 2           # 并行环境数，可根据 GPU 显存调整（建议 8-24）
+  checkpoint_folder: "logs/DPed_pro/collect_6action/checkpoints"
+  num_updates: -1
+  total_num_steps: 20000000
+  log_interval: 10
+  num_checkpoints: 20
+  force_torch_single_threaded: True
+  load_resume_state_config: False
+
+  evaluator:
+    _target_: habitat_baselines.rl.ppo.falcon_evaluator.FALCONEvaluator
+
+  eval:
+    use_ckpt_config: False
+    should_load_ckpt: False
+    # 若需要录制采集视频，解除下面一行注释：
+    # video_option: ["disk"]
+
+  rl:
+    agent:
+      type: "MultiAgentAccessMgr"
+      num_agent_types: 7                          # 1 机器人 + 6 行人
+      num_active_agents_per_type: [1, 1, 1, 1, 1, 1, 1]
+      num_pool_agents_per_type:   [1, 1, 1, 1, 1, 1, 1]
+      agent_sample_interval: 20
+      force_partner_sample_idx: -1
+
+    policy:
+      agent_0:
+        name: "PointNavResNetPolicy"   # 占位符，数据采集不使用策略网络
+
+    ppo:
+      # 以下 PPO 参数在数据采集模式下不生效，保留以满足框架接口
+      clip_param: 0.2
+      ppo_epoch: 2
+      num_mini_batch: 2
+      value_loss_coef: 0.5
+      entropy_coef: 0.01
+      lr: 2.5e-4
+      eps: 1e-5
+      max_grad_norm: 0.2
+      num_steps: 128
+      use_gae: True
+      gamma: 0.99
+      tau: 0.95
+      use_linear_clip_decay: False
+      use_linear_lr_decay: False
+      reward_window_size: 50
+      use_normalized_advantage: False
+      hidden_size: 512
+      use_double_buffered_sampler: False
+
+    ddppo:
+      sync_frac: 0.6
+      distrib_backend: NCCL
+      pretrained_weights: pretrained_model/falcon_noaux_25.pth
+      pretrained: False
+      pretrained_encoder: False
+      train_encoder: False
+      reset_critic: True
+      backbone: resnet50
+      rnn_type: LSTM
+      num_recurrent_layers: 2
+      force_distributed: False   # 单机采集设为 False；多机 SLURM 设为 True
+
+    auxiliary_losses:
+      people_counting:
+        max_human_num: 6
+        loss_scale: 0.1
+      guess_human_position:
+        max_human_num: 6
+        position_dim: 2
+        loss_scale: 0.1
+      future_trajectory_prediction:
+        max_human_num: 6
+        future_step: 4
+        loss_scale: 0.1
+
+# ══════════════════════════════════════════════════════════════════
+#  专家数据采集专属配置（ExpertDataCollector6Action 读取）
+# ══════════════════════════════════════════════════════════════════
+expert_data_collection:
+  # 数据保存根目录
+  data_folder: "/share/home/u19666033/dhj/DPed_pro/data/DPed_pro"
+
+  # 数据集分割名称（对应 data_folder/<split>/<scene>/<episode_id>/）
+  split: "train_part1"
+
+  # 最大采集 episode 数
+  max_episodes: 100000
+
+  # 每个 episode 的最大步数（超出则视为超时，不保存）
+  max_steps_per_episode: 1000
+
+  # 到达目标的距离阈值（米），与 task.measurements.success.success_distance 对应
+  # 建议设置为 1.5-2.0m，与 success_distance(3.0m) 保持合理差距
+  goal_radius: 1
+
+  # 是否启用详细失败分析日志（会在 data_folder 下生成 collection_analysis_*.txt）
+  enable_failure_analysis: True
+
+  # 筛选 episode 的最小测地距离（米），过短的路径跳过不采集
+  # 与 v3 版本的 5.0m 阈值一致
+  min_geodesic_distance: 3.0

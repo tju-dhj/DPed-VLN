@@ -1,0 +1,349 @@
+# @package _global_
+# ==============================================================================
+# 文件: instruction_brain_qwen3_vl_2b_train.yaml
+# 描述: Qwen3-VL-2b Brain训练配置 - 单卡训练
+# ==============================================================================
+#
+# 使用说明：
+# - 在单卡GPU上运行
+# - 不使用DDPPO，使用标准PPO训练
+# - Brain模型（Qwen3-VL-2b）和行人检测器（YOLOv8n）被冻结
+# - 只有主VLN策略网络被训练
+#
+# 启动命令示例：
+# python -m habitat_baselines.run \
+#   --config-name=instruction_brain_qwen3_vl_2b_train
+# ==============================================================================
+
+defaults:
+  - /benchmark/nav/socialnav_v2: falcon_hm3d_task_for_train_vln
+  - /habitat_baselines: habitat_baselines_rl_config_base
+  - /habitat/simulator/sim_sensors@habitat_baselines.eval.extra_sim_sensors.third_rgb_sensor: third_rgb_sensor
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_1: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_2: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_3: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_4: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_5: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_6: single_fixed
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_stop: discrete_stop
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_move_forward: discrete_move_forward
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_turn_left: discrete_turn_left
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_turn_right: discrete_turn_right
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_pause: discrete_pause
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_move_backward: discrete_move_backward
+  - /habitat/task/actions@habitat.task.actions.agent_1_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+  - /habitat/task/actions@habitat.task.actions.agent_2_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+  - /habitat/task/actions@habitat.task.actions.agent_3_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+  - /habitat/task/actions@habitat.task.actions.agent_4_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+  - /habitat/task/actions@habitat.task.actions.agent_5_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+  - /habitat/task/actions@habitat.task.actions.agent_6_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+  - /habitat/task/lab_sensors@habitat.task.lab_sensors.agent_0_pointgoal_with_gps_compass: pointgoal_with_gps_compass_sensor
+  - _self_
+
+habitat:
+  environment:
+    max_episode_steps: 500
+  dataset:
+    type: "DynamicVLNCE-v1"
+    split: train
+    data_path: "/share/home/u19666033/dhj/DPed_pro/data/dynamic_dataset_final_v1/train/{scene}.json.gz"
+    scenes_dir: "/share/home/u19666033/dhj/DPed_pro/data/scene_datasets/hm3d"
+    content_scenes: ["*"]
+  gym:
+    obs_keys:
+      # - agent_0_articulated_agent_jaw_rgb
+      # - agent_0_articulated_agent_jaw_depth
+      - agent_0_overhead_front_rgb
+      - agent_0_overhead_front_depth
+      # - agent_0_third_rgb
+      # - agent_0_third_depth
+      - agent_0_pointgoal_with_gps_compass
+      - agent_0_localization_sensor
+      - agent_0_human_num_sensor
+      - agent_0_oracle_humanoid_future_trajectory
+      - agent_0_falcon_instruction
+      - agent_0_falcon_gt_action
+  task:
+    measurements:
+      success:
+        type: Success
+        success_distance: 1.0
+    actions:
+      agent_0_discrete_stop:
+        lin_speed: 0.0 
+        ang_speed: 0.0
+      agent_0_discrete_move_forward:
+        lin_speed: 30.0
+        ang_speed: 0.0
+        allow_dyn_slide: True
+      agent_0_discrete_turn_left:
+        lin_speed: 0.0
+        ang_speed: 31.415926535897
+        allow_dyn_slide: True
+      agent_0_discrete_turn_right:
+        lin_speed: 0.0
+        ang_speed: -31.415926535897
+        allow_dyn_slide: True
+      # 动作4：PAUSE — 原地暂停，不终止任务（DiscretePauseAction）
+      agent_0_discrete_pause:
+        lin_speed: 0.0
+        ang_speed: 0.0
+        allow_dyn_slide: False   # 不滑动，保持原位
+      # 动作5：BACKWARD — 后退（DiscreteMoveBackwardAction）
+      agent_0_discrete_move_backward:
+        lin_speed: -30.0        # 负值表示后退，大小与前进对称
+        ang_speed: 0.0
+        allow_dyn_slide: True
+      agent_1_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_2_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_3_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_4_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_5_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_6_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+
+habitat_baselines:
+  evaluate: False
+  verbose: True
+  trainer_name: "instruction_brain_ppo_trainer"
+  torch_gpu_id: 0
+  tensorboard_dir: "evaluation-vln/instruction_brain_qwen3_vl_2b/hm3d/tb"
+  video_dir: "evaluation-vln/instruction_brain_qwen3_vl_2b/hm3d/video"
+  test_episode_count: -1
+  num_environments: 4
+  checkpoint_folder: "evaluation-vln/instruction_brain_qwen3_vl_2b/hm3d/checkpoints"
+  num_updates: -1
+  total_num_steps: 50000000
+  log_interval: 100
+  num_checkpoints: -1
+  checkpoint_interval: 100
+  force_torch_single_threaded: True
+  
+  # ========== 多卡DDPPO训练配置 ==========
+  # num_processes: 每个节点上的进程数，通常设为GPU数量
+  # 例如：3张GPU + num_processes=3 = 3个进程，每个进程对应一张GPU
+  num_processes: 3
+  
+  # ========== 继续训练配置 ==========
+  load_resume_state_config: True
+  load_from_checkpoint: true
+  checkpoint_path: "/share/home/u19666033/dhj/DPed_pro/evaluation-vln/dped_pro_social_eq/hm3d/checkpoints/ckpt.86.pth"
+
+  # Brain模块配置
+  brain:
+    enabled: true
+    instruction_mode: true
+    max_history_frames: 5
+
+    # ========== 行人检测配置 ==========
+    pedestrian_enabled: true
+    pedestrian_detector: "yolov8n"
+    pedestrian_confidence: 0.25
+    pedestrian_ckpt_path: "/share/home/u19666033/dhj/DPed_pro/pretrained_model/yolov8n-seg.pt"
+
+    # ========== 行人检测优化配置（加速多卡训练）==========
+    # 检测间隔：每隔N帧检测一次，其余使用缓存结果
+    # 设为1表示每帧检测（原始行为），设为3表示每3帧检测一次
+    # 推荐值：3-5（速度提升3-5倍，可能丢失1-2帧行人变化）
+    detection_interval: 3
+
+    # 是否启用异步检测模式（实验性，多进程环境可能不稳定）
+    # 注意：在多卡分布式训练中，ThreadPoolExecutor 可能导致进程崩溃
+    # 建议保持为 false，使用帧间隔检测即可获得良好加速效果
+    async_detection_enabled: false
+
+    # ========== Brain模型配置（Qwen3-VL-2b） ==========
+    model_type: "qwen3_vl_2b"
+    model_id: "Qwen/Qwen3-VL-2B-Instruct"
+    model_path: "/share/home/u19666033/dhj/DPed_pro/pretrained_model/Qwen3-VL-2B-Instruct"
+    brain_device: "cuda"
+
+    # 推理配置
+    max_new_tokens: 256
+    temperature: 0.7
+    top_p: 0.8
+
+    # 冻结配置（训练时冻结Brain和行人检测）
+    freeze_brain: true
+    freeze_pedestrian: true
+    freeze_clip: true
+
+    # 决策逻辑
+    call_brain_only_when_pedestrian: true
+    brain_call_confidence: 0.7
+
+    # 历史信息
+    use_history_for_brain: true
+    max_history_length: 5
+
+    # 记录配置
+    save_frame_records: false
+    output_dir: "/share/home/u19666033/dhj/DPed_pro/brain_records_train_2b"
+
+    # 统计配置
+    log_pedestrian_stats: true
+    log_brain_call_stats: true
+
+    # Prompt打印配置
+    log_prompt: false  # 设为false减少日志输出，调试时可改为true
+    save_prompt_to_file: false
+    save_frame_images: false
+    frame_images_root: "/share/home/u19666033/dhj/DPed_pro/brain_records_train_2b/frame_images"
+
+  evaluator:
+    _target_: habitat_baselines.rl.ppo.instruction_brain_ppo_evaluator.InstructionBrainPPOEvaluator
+
+  eval:
+    use_ckpt_config: False
+    should_load_ckpt: False
+
+  rl:
+    agent:
+      type: "MultiAgentAccessMgr"
+      num_agent_types: 7
+      num_active_agents_per_type: [1, 1, 1, 1, 1, 1, 1]
+      num_pool_agents_per_type: [1, 1, 1, 1, 1, 1, 1]
+      agent_sample_interval: 20
+      force_partner_sample_idx: -1
+    policy:
+      agent_0:
+        name: "PointNavResNetPolicy"
+    ppo:
+      clip_param: 0.2
+      ppo_epoch: 2
+      num_mini_batch: 1
+      value_loss_coef: 0.5
+      entropy_coef: 0.01
+      lr: 1e-4
+      eps: 1e-5
+      max_grad_norm: 0.5
+      num_steps: 64
+      use_gae: True
+      gamma: 0.99
+      tau: 0.95
+      use_linear_clip_decay: False
+      use_linear_lr_decay: True
+      reward_window_size: 50
+      use_normalized_advantage: False
+      hidden_size: 512
+      use_double_buffered_sampler: False
+      # ═══════════════════════════════════════════════════════════════
+      # DPed_pro 社交情商奖励配置 (6动作空间专用)
+      # ═══════════════════════════════════════════════════════════════
+      
+      # 开关：启用社交情商奖励函数
+      # False: 使用原始基础奖励（向后兼容）
+      # True: 启用角速度惩罚、社交礼让奖励、动作平滑惩罚
+      use_social_eq_reward: True
+      
+      # ── 1) 角速度惩罚：抑制"陀螺式旋转" ──
+      # 每次连续转向超过阈值后的惩罚系数
+      # 负值表示惩罚，绝对值越大惩罚越重
+      angular_velocity_penalty_coef: -0.05
+      
+      # 最大可接受的连续转向次数（超过此值开始惩罚）
+      max_acceptable_turn_rate: 2
+      
+      # ── 2) 社交礼让奖励：鼓励 Pause/Backward ──
+      # 执行 Pause 动作时的基础奖励
+      pause_reward: 0.1
+      
+      # 执行 Backward 动作时的基础奖励
+      backward_reward: 0.1
+      
+      # 社交效率奖励：礼让行人后成功恢复前进的额外奖励
+      social_efficiency_bonus: 0.5
+      
+      # 最大连续礼让步数（超过此值开始惩罚过度等待）
+      max_consecutive_social_actions: 3
+      
+      # 过度等待惩罚系数
+      over_wait_penalty: -0.1
+      
+      # ── 3) 动作平滑惩罚：减少 Forward/Backward 抖动 ──
+      # Forward/Backward 切换时的惩罚系数
+      action_smoothing_penalty_coef: -0.02
+
+      # ── 4) 高频切换惩罚：抑制 FORWARD ↔ BACKWARD 频繁切换 ──
+      # 连续切换次数超过此阈值后开始惩罚
+      high_freq_switch_threshold: 3
+
+      # 每次额外切换的惩罚幅度（绝对值越大惩罚越重）
+      high_freq_switch_penalty_coef: -0.05
+
+      # ── 5) 基础奖励 ──
+      # 成功到达目标时的奖励
+      success_reward: 10.0
+      
+      # 与行人碰撞时的惩罚
+      collision_penalty: -2.0
+
+    ddppo:
+      sync_frac: 0.6
+      distrib_backend: NCCL
+      pretrained_weights: /share/home/u19666033/dhj/DPed_pro/pretrained_model/falcon_noaux_25.pth
+      pretrained: False
+      pretrained_encoder: False
+      train_encoder: False
+      reset_critic: True
+      backbone: resnet50_clip_attnpool
+      rnn_type: LSTM
+      num_recurrent_layers: 2
+      clip_visual_sensors:
+        rgb_keys:
+          - overhead_front_rgb
+          - third_rgb
+          - articulated_agent_jaw_rgb
+        depth_keys:
+          - overhead_front_depth
+          - third_depth
+          - articulated_agent_jaw_depth
+        fusion_mode: "average"
+        normalize_before_fusion: True
+    auxiliary_losses:
+      people_counting:
+        max_human_num: 6
+        loss_scale: 0.1
+      guess_human_position:
+        max_human_num: 6
+        position_dim: 2
+        loss_scale: 0.1
+      future_trajectory_prediction:
+        max_human_num: 6
+        future_step: 4
+        loss_scale: 0.1
+
+hydra:
+  job:
+    name: "instruction_brain_qwen3_vl_2b_train"
+  run:
+    dir: "outputs/instruction_brain_qwen3_vl_2b_train/${now:%Y-%m-%d_%H-%M-%S}"

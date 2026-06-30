@@ -1,0 +1,27 @@
+# =============================================================================
+# FRP 服务端配置 (frps.toml) — 部署在有公网IP的云服务器上
+# =============================================================================
+# 安装 frps:
+#   wget https://github.com/fatedier/frp/releases/download/v0.61.0/frp_0.61.0_linux_amd64.tar.gz
+#   tar -xzf frp_0.61.0_linux_amd64.tar.gz -C /opt/
+#   ln -s /opt/frp_0.61.0_linux_amd64/frps /usr/local/bin/frps
+#   mkdir -p /etc/frp && cp /path/to/frps.toml /etc/frp/frps.toml
+#   frps -c /etc/frp/frps.toml
+# =============================================================================
+
+# 监听端口
+bindPort = 7000
+
+# Dashboard
+webServer.addr = "0.0.0.0"
+webServer.port = 7500
+webServer.user = "admin"
+webServer.password = "CHANGE_THIS_PASSWORD"
+
+# Token 认证
+auth.token = "CHANGE_THIS_TOKEN_FOR_SECURITY"
+
+# 日志
+log.to = "/var/log/frps.log"
+log.level = "info"
+log.maxDays = 7

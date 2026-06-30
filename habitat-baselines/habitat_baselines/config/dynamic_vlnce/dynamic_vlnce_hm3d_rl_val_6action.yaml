@@ -1,0 +1,212 @@
+# @package _global_
+
+defaults:
+  - /benchmark/nav/socialnav_v2: falcon_hm3d_task
+  - /habitat_baselines: habitat_baselines_rl_config_base
+  - /habitat/simulator/sim_sensors@habitat_baselines.eval.extra_sim_sensors.third_rgb_sensor: third_rgb_sensor
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_1: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_2: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_3: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_4: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_5: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_6: single_fixed
+  # 6个动作空间：stop, move_forward, turn_left, turn_right, pause, move_backward
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_stop: discrete_stop
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_move_forward: discrete_move_forward
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_turn_left: discrete_turn_left
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_turn_right: discrete_turn_right
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_pause: discrete_pause
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_move_backward: discrete_move_backward
+  - /habitat/task/actions@habitat.task.actions.agent_1_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+  - /habitat/task/actions@habitat.task.actions.agent_2_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+  - /habitat/task/actions@habitat.task.actions.agent_3_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+  - /habitat/task/actions@habitat.task.actions.agent_4_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+  - /habitat/task/actions@habitat.task.actions.agent_5_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+  - /habitat/task/actions@habitat.task.actions.agent_6_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+  - /habitat/task/lab_sensors@habitat.task.lab_sensors.agent_0_pointgoal_with_gps_compass: pointgoal_with_gps_compass_sensor
+  - _self_
+
+habitat:
+  environment:
+    max_episode_steps: 400  # 与训练配置一致
+    iterator_options:
+      shuffle: False # 保持相同的顺序
+  dataset:
+    type: "DynamicVLNCE-v1"
+    split: val
+    data_path: "/share/home/u14004/dhj/Falcon-main/data/dynamic_dataset_final_v1/val_full/{scene}.json.gz"
+    scenes_dir: "/share/home/u14004/dhj/Falcon-main/data/scene_datasets/hm3d"
+    content_scenes: ["*"]
+  simulator:
+    habitat_sim_v0:
+      gpu_device_id: 0
+      allow_sliding: True
+      enable_physics: True
+  gym:
+    obs_keys:
+      - agent_0_articulated_agent_jaw_rgb  # 启用RGB相机用于CLIP处理
+      - agent_0_articulated_agent_jaw_depth
+      - agent_0_overhead_front_rgb
+      - agent_0_overhead_front_depth
+      - agent_0_third_rgb
+      - agent_0_third_depth
+      - agent_0_pointgoal_with_gps_compass
+      - agent_0_localization_sensor
+      - agent_0_human_num_sensor
+      - agent_0_oracle_humanoid_future_trajectory
+      - agent_0_falcon_instruction  # VLN指令传感器
+      - agent_0_falcon_gt_action    # VLN GT动作传感器
+  task:
+    measurements:
+      success:
+        type: Success
+        success_distance: 3.0  # 与训练配置一致
+    actions:
+      # 动作0: 停止（终止任务）
+      agent_0_discrete_stop:
+        lin_speed: 0.0
+        ang_speed: 0.0
+      # 动作1: 前进
+      agent_0_discrete_move_forward:
+        lin_speed: 25.0    # 与训练配置一致
+        ang_speed: 0.0
+        allow_dyn_slide: True
+      # 动作2: 左转
+      agent_0_discrete_turn_left:
+        lin_speed: 0.0
+        ang_speed: 10.0    # 与训练配置一致
+        allow_dyn_slide: True
+      # 动作3: 右转
+      agent_0_discrete_turn_right:
+        lin_speed: 0.0
+        ang_speed: -10.0   # 与训练配置一致
+        allow_dyn_slide: True
+      # 动作4：PAUSE — 原地暂停，不终止任务
+      agent_0_discrete_pause:
+        lin_speed: 0.0
+        ang_speed: 0.0
+        allow_dyn_slide: False   # 不滑动，保持原位
+      # 动作5：BACKWARD — 后退
+      agent_0_discrete_move_backward:
+        lin_speed: -25.0        # 与训练配置一致
+        ang_speed: 0.0
+        allow_dyn_slide: True
+      # 行人动作参数
+      agent_1_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 10.0    # 与训练配置一致
+        ang_speed: 10.0    # 与训练配置一致
+        allow_dyn_slide: True
+      agent_2_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_3_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_4_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_5_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_6_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+
+
+habitat_baselines:
+  evaluate: True
+  verbose: True
+  trainer_name: "dynamic_vln_trainer"
+  torch_gpu_id: 0
+  tensorboard_dir: "evaluation_vln_val/dynamic_vlnce_clip_rl_v2_6actions/hm3d/tb"
+  # video_dir: "evaluation_vln_val/dynamic_vlnce_clip_rl_v2_6actions/hm3d/video"
+  test_episode_count: -1  # 不限制测试episode数量
+  # 指向你的6动作训练模型检查点
+  eval_ckpt_path_dir: "/share/home/u19666033/dhj/DPed_pro/evaluation-vln/dynamic_vlnce_clip_rl_v2_6actions/hm3d/checkpoints/ckpt.82.pth"
+  num_environments: 1  # 设置为1以避免多进程EGL初始化冲突（评估模式）
+  checkpoint_folder: "evaluation_vln_val/dynamic_vlnce_clip_rl_v2_6actions/hm3d/checkpoints"
+
+  num_updates: -1
+  total_num_steps: 1e8
+  log_interval: 10
+  num_checkpoints: 200
+  force_torch_single_threaded: True
+  num_processes: 1
+  load_resume_state_config: False
+
+  evaluator:
+    _target_: habitat_baselines.rl.ppo.falcon_evaluator.FALCONEvaluator
+
+  eval:
+    use_ckpt_config: False
+    should_load_ckpt: True
+    # video_option: ["disk"]
+
+  rl:
+    agent:
+      type: "MultiAgentAccessMgr"
+      num_agent_types: 7
+      num_active_agents_per_type: [1, 1, 1, 1, 1, 1, 1]
+      num_pool_agents_per_type: [1, 1, 1, 1, 1, 1, 1]
+      agent_sample_interval: 20
+      force_partner_sample_idx: -1
+    policy:
+      agent_0:
+        name: "PointNavResNetPolicy"
+    ppo:
+      # ppo参数
+      clip_param: 0.2
+      ppo_epoch: 2
+      num_mini_batch: 1  # 必须 <= num_environments (1)
+      value_loss_coef: 0.5
+      entropy_coef: 0.01
+      lr: 1e-4
+      eps: 1e-5
+      max_grad_norm: 0.5
+      num_steps: 64
+      use_gae: True
+      gamma: 0.99
+      tau: 0.95
+      use_linear_clip_decay: False
+      use_linear_lr_decay: True
+      reward_window_size: 50
+      use_normalized_advantage: False
+      hidden_size: 512
+      use_double_buffered_sampler: False
+
+    ddppo:
+      force_distributed: False  # 明确禁用分布式模式用于评估
+      sync_frac: 0.6
+      distrib_backend: NCCL
+      pretrained_weights: pretrained_model/falcon_noaux_25.pth
+      pretrained: False
+      pretrained_encoder: False
+      train_encoder: False
+      reset_critic: True
+      backbone: resnet50_clip_attnpool
+      rnn_type: LSTM
+      num_recurrent_layers: 2
+      clip_visual_sensors:
+        rgb_keys:
+          - overhead_front_rgb
+        depth_keys:
+          - overhead_front_depth
+        fusion_mode: "average"
+        normalize_before_fusion: True

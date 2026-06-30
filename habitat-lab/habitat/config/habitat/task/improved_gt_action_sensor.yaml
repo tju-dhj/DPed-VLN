@@ -1,0 +1,18 @@
+# @package habitat.task.lab_sensors.improved_gt_action_sensor
+
+@registry.register_sensor(name="improved_gt_action_sensor")
+class ImprovedGT_ActionSensorConfig:
+  type: "ImprovedGT_ActionSensor"
+  uuid: "gt_action"
+  action_space_size: 4
+  mode: "single_step"  # "single_step" or "trajectory"
+  max_trajectory_length: 100
+
+
+# @package habitat.task.lab_sensors.expert_action_sensor
+
+@registry.register_sensor(name="expert_action_sensor")
+class ExpertActionSensorConfig:
+  type: "GT_ActionExpertSensor"
+  uuid: "expert_action"
+  action_space_size: 4

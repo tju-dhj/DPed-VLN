@@ -1,0 +1,290 @@
+# @package _global_
+# ==============================================================================
+# 文件: instruction_4a_rlv1_8_brain_qwen3_vl_8b_eval.yaml
+# 描述: Qwen3-VL-8B Brain评估配置 - 单卡评估
+# ==============================================================================
+#
+# 使用说明：
+# - 在单卡GPU上运行评估
+# - Brain模型（Qwen3-VL-8B）和行人检测器（YOLOv8n）保持启用
+# - 评估训练好的VLN策略 + Brain指令优化
+#
+# 启动命令示例：
+# python -u -m habitat_baselines.run \
+#   --config-name=DPed_brain_new/instruction_4a_rlv1_8_brain_qwen3_vl_8b_eval
+# ==============================================================================
+
+defaults:
+  - /benchmark/nav/socialnav_v2: falcon_hm3d_task
+  - /habitat_baselines: habitat_baselines_rl_config_base
+  - /habitat/simulator/sim_sensors@habitat_baselines.eval.extra_sim_sensors.third_rgb_sensor: third_rgb_sensor
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_1: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_2: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_3: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_4: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_5: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_6: single_fixed
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_stop: discrete_stop
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_move_forward: discrete_move_forward
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_turn_left: discrete_turn_left
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_turn_right: discrete_turn_right
+  - /habitat/task/actions@habitat.task.actions.agent_1_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+  - /habitat/task/actions@habitat.task.actions.agent_2_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+  - /habitat/task/actions@habitat.task.actions.agent_3_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+  - /habitat/task/actions@habitat.task.actions.agent_4_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+  - /habitat/task/actions@habitat.task.actions.agent_5_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+  - /habitat/task/actions@habitat.task.actions.agent_6_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+  - /habitat/task/lab_sensors@habitat.task.lab_sensors.agent_0_pointgoal_with_gps_compass: pointgoal_with_gps_compass_sensor
+  - _self_
+
+habitat:
+  environment:
+    max_episode_steps: 500
+    iterator_options:
+      shuffle: False
+  dataset:
+    type: "DynamicVLNCE-v1"
+    split: val
+    data_path: "/share/home/u19666033/dhj/DPed_pro/dped_pro_resplit/val_unseen/{scene}.json.gz"
+    scenes_dir: "/share/home/u19666033/dhj/DPed_pro/data/scene_datasets/hm3d"
+    content_scenes: ["*"]
+  gym:
+    obs_keys:
+      - agent_0_overhead_front_rgb
+      - agent_0_overhead_front_depth
+      - agent_0_starting_point_gps_compass
+      - agent_0_localization_sensor
+      - agent_0_human_num_sensor
+      - agent_0_oracle_humanoid_future_trajectory
+      - agent_0_falcon_instruction
+      - agent_0_falcon_gt_action
+  task:
+    measurements:
+      success:
+        type: Success
+        success_distance: 3.0
+      spl:
+        type: SPL
+      psc:
+        type: PersonalSpaceCompliance
+        use_geo_distance: true
+      human_collision:
+        type: HumanCollision
+    actions:
+      agent_0_discrete_stop:
+        lin_speed: 0.0
+        ang_speed: 0.0
+      agent_0_discrete_move_forward:
+        lin_speed: 30.0
+        ang_speed: 0.0
+        allow_dyn_slide: True
+      agent_0_discrete_turn_left:
+        lin_speed: 0.0
+        ang_speed: 31.415926535897
+        allow_dyn_slide: True
+      agent_0_discrete_turn_right:
+        lin_speed: 0.0
+        ang_speed: -31.415926535897
+        allow_dyn_slide: True
+      agent_1_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_2_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_3_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_4_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_5_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_6_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+
+habitat_baselines:
+  evaluate: True
+  verbose: True
+  trainer_name: "instruction_brain_ppo_trainer"
+  torch_gpu_id: 0
+  tensorboard_dir: "evaluation-vln/instruction_brain_qwen3_vl_8b/hm3d/tb"
+  video_dir: "evaluation-vln/instruction_brain_qwen3_vl_8b/hm3d/video"
+  test_episode_count: -1
+  num_environments: 1
+  checkpoint_folder: "evaluation-vln/instruction_brain_qwen3_vl_8b/hm3d/checkpoints"
+  num_updates: -1
+  total_num_steps: 1e8
+  log_interval: 10
+  num_checkpoints: 0
+  force_torch_single_threaded: True
+  num_processes: 1
+  load_resume_state_config: False
+
+  # ========== 评估checkpoint路径 ==========
+  eval_ckpt_path_dir: "/share/home/u19666033/dhj/DPed_pro/evaluation-vln/instruction_brain_qwen3_vl_8b/hm3d/checkpoints/ckpt.2.pth"
+
+  # Brain模块配置（评估时保持启用）
+  brain:
+    enabled: true
+    instruction_mode: true
+    max_history_frames: 5
+
+    # ========== 行人检测配置 ==========
+    pedestrian_enabled: true
+    pedestrian_detector: "yolov8n"
+    pedestrian_confidence: 0.25
+    pedestrian_ckpt_path: "/share/home/u19666033/dhj/DPed_pro/pretrained_model/yolov8n-seg.pt"
+
+    # ========== 行人检测优化配置 ==========
+    detection_interval: 3   # 评估时每帧检测，保证精度
+
+    # 是否启用异步检测模式
+    async_detection_enabled: false
+
+    # ========== Brain模型配置（Qwen3-VL-8B） ==========
+    model_type: "qwen3_vl_8b"
+    model_id: "Qwen/Qwen3-VL-8B-Instruct"
+    model_path: "/share/home/u19666033/dhj/DPed_pro/pretrained_model/Qwen3-VL-8B-Instruct"
+    brain_device: "cuda"
+
+    # 推理配置
+    max_new_tokens: 256
+    temperature: 0.7
+    top_p: 0.8
+
+    # 冻结配置
+    freeze_brain: true
+    freeze_pedestrian: true
+    freeze_clip: true
+
+    # 决策逻辑
+    call_brain_only_when_pedestrian: true
+    brain_call_confidence: 0.3
+
+    # 动作空间大小
+    num_actions: 4
+
+    # Brain调用节流
+    min_brain_call_interval: 3
+
+    # 定期调用Brain
+    call_brain_periodically: true
+    call_brain_interval: 20
+
+    # 历史信息
+    use_history_for_brain: true
+    max_history_length: 5
+
+    # 记录配置
+    save_frame_records: false
+    output_dir: "/share/home/u19666033/dhj/DPed_pro/brain_records_eval_8b"
+
+    # 统计配置
+    log_pedestrian_stats: true
+    log_brain_call_stats: true
+
+    # Prompt打印配置
+    log_prompt: true
+    save_prompt_to_file: false
+    save_frame_images: false
+    frame_images_root: "/share/home/u19666033/dhj/DPed_pro/brain_records_eval_8b/frame_images"
+
+  evaluator:
+    _target_: habitat_baselines.rl.ppo.instruction_brain_ppo_evaluator.InstructionBrainPPOEvaluator
+
+  eval:
+    use_ckpt_config: False
+    should_load_ckpt: True
+
+  rl:
+    agent:
+      type: "MultiAgentAccessMgr"
+      num_agent_types: 7
+      num_active_agents_per_type: [1, 1, 1, 1, 1, 1, 1]
+      num_pool_agents_per_type: [1, 1, 1, 1, 1, 1, 1]
+      agent_sample_interval: 20
+      force_partner_sample_idx: -1
+    policy:
+      agent_0:
+        name: "PointNavResNetPolicy"
+    ppo:
+      clip_param: 0.2
+      ppo_epoch: 2
+      num_mini_batch: 1
+      value_loss_coef: 0.5
+      entropy_coef: 0.01
+      lr: 1e-4
+      eps: 1e-5
+      max_grad_norm: 0.5
+      num_steps: 64
+      use_gae: True
+      gamma: 0.99
+      tau: 0.95
+      use_linear_clip_decay: False
+      use_linear_lr_decay: True
+      reward_window_size: 50
+      use_normalized_advantage: False
+      hidden_size: 512
+      use_double_buffered_sampler: False
+
+    ddppo:
+      sync_frac: 0.6
+      distrib_backend: NCCL
+      pretrained_weights: /share/home/u19666033/dhj/DPed_pro/pretrained_model/falcon_noaux_25.pth
+      pretrained: False
+      pretrained_encoder: False
+      train_encoder: False
+      reset_critic: True
+      backbone: resnet50_clip_attnpool
+      rnn_type: LSTM
+      num_recurrent_layers: 2
+      clip_visual_sensors:
+        rgb_keys:
+          - overhead_front_rgb
+          - third_rgb
+          - articulated_agent_jaw_rgb
+        depth_keys:
+          - overhead_front_depth
+          - third_depth
+          - articulated_agent_jaw_depth
+        fusion_mode: "average"
+        normalize_before_fusion: True
+    auxiliary_losses:
+      people_counting:
+        max_human_num: 6
+        loss_scale: 0.1
+      guess_human_position:
+        max_human_num: 6
+        position_dim: 2
+        loss_scale: 0.1
+      future_trajectory_prediction:
+        max_human_num: 6
+        future_step: 4
+        loss_scale: 0.1
+
+hydra:
+  job:
+    name: "instruction_brain_qwen3_vl_8b_eval"
+  run:
+    dir: "outputs/instruction_brain_qwen3_vl_8b_eval/${now:%Y-%m-%d_%H-%M-%S}"

@@ -1,0 +1,214 @@
+# @package _global_
+#
+# StreamVLN Policy for Falcon Evaluation (HM3D dataset)
+# 使用实机部署的StreamVLN checkpoint，参考原始StreamVLN评估配置优化参数
+# 修复了可能导致成功率低的关键参数问题
+#
+
+defaults:
+  - /benchmark/nav/socialnav_v2: falcon_hm3d_task
+  - /habitat_baselines: habitat_baselines_rl_config_base
+  - /habitat/simulator/sim_sensors@habitat_baselines.eval.extra_sim_sensors.third_rgb_sensor: third_rgb_sensor 
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_1: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_2: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_3: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_4: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_5: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_6: single_fixed
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_stop: discrete_stop
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_move_forward: discrete_move_forward
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_turn_left: discrete_turn_left
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_turn_right: discrete_turn_right
+  - /habitat/task/actions@habitat.task.actions.agent_1_oracle_nav_randcoord_action_obstacle: oracle_nav_action 
+  - /habitat/task/actions@habitat.task.actions.agent_2_oracle_nav_randcoord_action_obstacle: oracle_nav_action 
+  - /habitat/task/actions@habitat.task.actions.agent_3_oracle_nav_randcoord_action_obstacle: oracle_nav_action 
+  - /habitat/task/actions@habitat.task.actions.agent_4_oracle_nav_randcoord_action_obstacle: oracle_nav_action 
+  - /habitat/task/actions@habitat.task.actions.agent_5_oracle_nav_randcoord_action_obstacle: oracle_nav_action 
+  - /habitat/task/actions@habitat.task.actions.agent_6_oracle_nav_randcoord_action_obstacle: oracle_nav_action 
+  - /habitat/task/lab_sensors@habitat.task.lab_sensors.agent_0_pointgoal_with_gps_compass: pointgoal_with_gps_compass_sensor
+  - _self_
+
+habitat:
+  dataset:
+    type: "DynamicVLNCE-v1"
+    split: val  # 使用Dynamic-VLNCE测试集
+    data_path: "/share/home/u14004/dhj/Falcon-main/data/dynamic_dataset_final_v2/val_full/{scene}.json.gz"
+    scenes_dir: "/share/home/u14004/dhj/Falcon-main/data/scene_datasets/hm3d"
+    content_scenes: ["*"]
+  environment:
+    iterator_options:
+      shuffle: False # keep the same order
+  gym:
+    obs_keys: 
+      - agent_0_overhead_front_rgb
+      - agent_0_overhead_front_depth
+      - agent_0_third_rgb
+      - agent_0_third_depth
+      - agent_0_pointgoal_with_gps_compass
+      - agent_0_localization_sensor
+      - agent_0_human_num_sensor  
+      - agent_0_oracle_humanoid_future_trajectory
+      - agent_0_falcon_instruction  # 文本指令传感器
+      - agent_0_falcon_gt_action 
+  task:
+    measurements:
+      # 只覆盖基础Success measure的success_distance（VLN-CE标准为3.0米）
+      # VLN-CE特定的measurements（instruction_success等）未在结构化配置中定义，无法在此覆盖
+      success:
+        type: Success
+        success_distance: 3.0
+    actions:
+      # Agent 0 (Main agent controlled by StreamVLN) actions
+      # StreamVLN outputs: 0=STOP, 1=FORWARD(↑), 2=LEFT(←), 3=RIGHT(→)
+      agent_0_discrete_stop:
+        lin_speed: 0.0 
+        ang_speed: 0.0
+      agent_0_discrete_move_forward:
+        lin_speed: 30.0  # StreamVLN使用25cm前进（0.25m = 30.0 in simulator units）
+        ang_speed: 0.0
+        allow_dyn_slide: True
+      agent_0_discrete_turn_left:
+        lin_speed: 0.0
+        ang_speed: 31.415926535897  # StreamVLN使用15度步长（15度 = π/12 ≈ 0.2618 rad ≈ 31.416 deg/s）
+        allow_dyn_slide: True
+      agent_0_discrete_turn_right:
+        lin_speed: 0.0
+        ang_speed: -31.415926535897  # StreamVLN使用15度步长
+        allow_dyn_slide: True
+      # Human agents (agent 1-6) use oracle navigation
+      agent_1_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle 
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_2_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle 
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_3_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle 
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_4_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle 
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_5_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle 
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_6_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle 
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+
+habitat_baselines:
+  evaluate: True
+  verbose: True 
+  trainer_name: "ddppo"
+  torch_gpu_id: 0
+  tensorboard_dir: "evaluation-vln-test/streamvln_falcon_v2_realworld/hm3d/tb"
+  video_dir: "evaluation-vln-test/streamvln_falcon_v2_realworld/hm3d/video"
+  test_episode_count: -1
+  eval_ckpt_path_dir: "pretrained_model/streamvln_model.pth"  # StreamVLN模型路径（相对路径，相对于项目根目录）
+  num_environments: 1  # StreamVLN当前只支持单环境
+  checkpoint_folder: "evaluation-vln-test/streamvln_falcon_v2_realworld/hm3d/checkpoints"
+  num_updates: -1
+  total_num_steps: 1e8
+  log_interval: 10
+  num_checkpoints: 200
+  force_torch_single_threaded: True
+  load_resume_state_config: False
+
+  evaluator:
+    _target_: habitat_baselines.rl.ppo.streamvln_evaluator.StreamVLNEvaluator
+
+  eval:
+    use_ckpt_config: False 
+    should_load_ckpt: False
+    # video_option: ["disk"]
+    # 注意：内存优化参数（clear_cache_interval, clear_cache_on_episode_end）
+    # 在代码中使用getattr提供默认值，无需在此配置
+    # 如需自定义，可以通过环境变量或代码修改默认值
+
+  rl:
+    agent:
+      type: "MultiAgentAccessMgr"
+      num_agent_types: 7
+      num_active_agents_per_type: [1, 1, 1, 1, 1, 1, 1]
+      num_pool_agents_per_type: [1, 1, 1, 1, 1, 1, 1]
+      agent_sample_interval: 20 
+      force_partner_sample_idx: -1
+    policy:
+      agent_0:
+        name: "StreamVLNPolicy"  # 使用StreamVLN策略
+        # ✅ 修复1: 使用实机部署的checkpoint路径（参考StreamVLN原始评估配置）
+        model_path: "/share/home/u14004/sk/StreamVLN/checkpoints/StreamVLN_Video_qwen_1_5_1epoch_196token_8history_32frame"
+        # ✅ 修复2: num_frames从16改为32（参考原始配置，减少重置频率，保持更长上下文）
+        num_frames: 32    # 帧数，在重置内存之前处理的帧数（参考原始StreamVLN评估配置）
+        # ✅ 修复3: num_history保持8（与原始配置一致）
+        num_history: 8    # 保留的历史帧数
+        # ✅ 修复4: num_future_steps保持4（与原始配置一致）
+        num_future_steps: 4 # 用于动作预测的未来步数（用于历史帧采样步长）
+        # ✅ 修复5: model_max_length从2048改为4096（参考原始配置，允许更长的输入序列）
+        model_max_length: 4096  # 最大序列长度（参考原始StreamVLN评估配置，允许更长上下文）
+        device: "cuda"
+        # 注意：虽然4096会增加内存占用，但这是原始StreamVLN评估配置的标准设置
+        # 如果遇到OOM，可以考虑：
+        # 1. 减小model_max_length到3072或2048
+        # 2. 使用gradient checkpointing
+        # 3. 减小batch size（但当前num_environments=1，已经是单环境）
+        forward_step: 25  # 前进步长（cm）
+        turn_step: 15  # 转向步长（度）
+        # max_action_queue_length: 8  # 动作队列最大长度（防止队列无限增长导致内存问题）
+        # instruction_sensor_uuid: "agent_0_falcon_instruction"  # 指令传感器UUID
+        action_distribution_type: "categorical"
+    ppo:
+      # ppo params (for compatibility, not used during pure evaluation)
+      clip_param: 0.2
+      ppo_epoch: 2
+      num_mini_batch: 2
+      value_loss_coef: 0.5
+      entropy_coef: 0.01
+      lr: 2.5e-4
+      eps: 1e-5
+      max_grad_norm: 0.2
+      num_steps: 128
+      use_gae: True
+      gamma: 0.99
+      tau: 0.95
+      use_linear_clip_decay: False
+      use_linear_lr_decay: False
+      reward_window_size: 50
+      use_normalized_advantage: False
+      hidden_size: 1024  # StreamVLN uses larger hidden size
+      use_double_buffered_sampler: False
+
+    ddppo:
+      sync_frac: 0.6
+      distrib_backend: NCCL
+      force_distributed: False  # 明确设置为False，确保单节点模式不被误判为分布式
+      # StreamVLN loads its own pretrained model
+      
+      pretrained: False
+      pretrained_encoder: False
+      train_encoder: False  # StreamVLN encoder is frozen
+      reset_critic: True
+      # These parameters are for compatibility
+      backbone: "streamvln"
+      rnn_type: "GRU"
+      num_recurrent_layers: 1
+
+
+

@@ -1,0 +1,14 @@
+# @package habitat.dataset
+
+defaults:
+  - /habitat/dataset: dataset_config_schema
+  - _self_
+
+type: DynamicVLNCE-v1
+split: train
+data_path: data/filtered_dataset/{scene}.json.gz
+scenes_dir: data/scene_datasets/hm3d
+content_scenes: ["*"]
+
+
+

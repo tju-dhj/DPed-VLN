@@ -1,0 +1,236 @@
+# @package _global_
+
+defaults:
+  - /benchmark/nav/socialnav_v2: falcon_hm3d_task_for_train
+  - /habitat_baselines: habitat_baselines_rl_config_base
+  - /habitat/simulator/sim_sensors@habitat_baselines.eval.extra_sim_sensors.third_rgb_sensor: third_rgb_sensor 
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_1: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_2: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_3: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_4: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_5: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_6: single_fixed
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_stop: discrete_stop
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_move_forward: discrete_move_forward
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_turn_left: discrete_turn_left
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_turn_right: discrete_turn_right
+  - /habitat/task/actions@habitat.task.actions.agent_1_oracle_nav_randcoord_action_obstacle: oracle_nav_action 
+  - /habitat/task/actions@habitat.task.actions.agent_2_oracle_nav_randcoord_action_obstacle: oracle_nav_action 
+  - /habitat/task/actions@habitat.task.actions.agent_3_oracle_nav_randcoord_action_obstacle: oracle_nav_action 
+  - /habitat/task/actions@habitat.task.actions.agent_4_oracle_nav_randcoord_action_obstacle: oracle_nav_action 
+  - /habitat/task/actions@habitat.task.actions.agent_5_oracle_nav_randcoord_action_obstacle: oracle_nav_action 
+  - /habitat/task/actions@habitat.task.actions.agent_6_oracle_nav_randcoord_action_obstacle: oracle_nav_action 
+  - /habitat/task/lab_sensors@habitat.task.lab_sensors.agent_0_pointgoal_with_gps_compass: pointgoal_with_gps_compass_sensor
+  # VLN sensors are included via falcon_task_detail.yaml defaults
+  - _self_
+
+habitat:
+  environment:
+    max_episode_steps: 400  # 限制episode最大步数为400，防止内存溢出（原500）
+  dataset:
+    type: "DynamicVLNCE-v1"
+    split: train
+    data_path: "/share/home/u14004/dhj/Falcon-main/data/dynamic_dataset_final_v2/train/{scene}.json.gz"
+    scenes_dir: "/share/home/u14004/dhj/Falcon-main/data/scene_datasets/hm3d"
+    content_scenes: ["*"]
+  gym:
+    obs_keys: 
+      # - agent_0_articulated_agent_jaw_rgb # use it if add RGB camera
+      # - agent_0_articulated_agent_jaw_depth
+      - agent_0_overhead_front_rgb
+      - agent_0_overhead_front_depth
+      - agent_0_third_rgb
+      - agent_0_third_depth
+      - agent_0_pointgoal_with_gps_compass
+      - agent_0_localization_sensor
+      - agent_0_human_num_sensor  
+      - agent_0_oracle_humanoid_future_trajectory
+      - agent_0_falcon_instruction  # VLN instruction sensor
+      - agent_0_falcon_gt_action    # VLN GT action sensor
+  task:
+    measurements:
+      success:
+        type: Success
+        success_distance: 3.0  # 在这里覆盖默认值 0.25
+    actions:
+      agent_0_discrete_stop:
+        lin_speed: 0.0 
+        ang_speed: 0.0
+      agent_0_discrete_move_forward:
+        lin_speed: 25.0
+        ang_speed: 0.0
+        allow_dyn_slide: True
+      agent_0_discrete_turn_left:
+        lin_speed: 0.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_0_discrete_turn_right:
+        lin_speed: 0.0
+        ang_speed: -10.0
+        allow_dyn_slide: True
+      agent_1_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle 
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_2_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle 
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_3_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle 
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_4_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle 
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_5_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle 
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_6_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle 
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+habitat_baselines:
+  evaluate: False # True
+  verbose: True
+  trainer_name: "dynamic_vln_trainer" ## Use Falcon trainer for testing
+  torch_gpu_id: 0
+  tensorboard_dir: "evaluation-vln/embodied_sensor_train_rl_v2/hm3d/tb"
+  # video_dir: "evaluation-vln/dynamic_vlnce_clip_rl_v1/hm3d/video"
+  test_episode_count: -1
+  num_environments: 4  # 从4减少到2以避免OOM（内存溢出）
+  checkpoint_folder: "evaluation-vln/embodied_sensor_train_rl_v2/hm3d/checkpoints" # save_dir for training
+  # 注意：训练器会自动从checkpoint_folder中查找以下文件来恢复训练（按优先级）：
+  # 1. .habitat-resume-state.pth (包含完整的训练状态，包括优化器、学习率调度器等)
+  # 2. latest.pth (最新的checkpoint)
+  # 3. 最新的ckpt.X.pth (按编号最大的)
+  num_updates: -1
+  total_num_steps: 50000000 # 缩短训练时间：从10M减少到2M步（约5倍加速）
+  # 注意：如果从checkpoint恢复，训练会从上次中断的地方继续，total_num_steps是总目标步数
+  log_interval: 10
+  num_checkpoints: -1  # 改为-1，使用checkpoint_interval控制保存频率，避免内存问题
+  checkpoint_interval: 50  # 每50个update保存一次checkpoint，防止OOM导致进度丢失
+  # Force PyTorch to be single threaded as
+  # this improves performance considerably
+  force_torch_single_threaded: True
+  # Disable multiprocessing for stability
+  num_processes: 1
+  load_resume_state_config: True  # 允许从checkpoint恢复训练
+  # 训练器会自动从checkpoint_folder中查找latest.pth或.habitat-resume-state.pth来恢复训练
+  # 如果找不到，会从最新的ckpt.X.pth恢复
+
+  evaluator:
+    _target_: habitat_baselines.rl.ppo.falcon_evaluator.FALCONEvaluator
+
+  eval:
+    use_ckpt_config: False 
+    should_load_ckpt: False
+
+  rl:
+    agent:
+      type: "MultiAgentAccessMgr"
+      num_agent_types: 7
+      num_active_agents_per_type: [1, 1, 1, 1, 1, 1, 1]
+      num_pool_agents_per_type: [1, 1, 1, 1, 1, 1, 1]
+      agent_sample_interval: 20 
+      force_partner_sample_idx: -1
+    policy:
+      agent_0:
+        name: "PointNavResNetPolicy"  # Use original policy for testing with Falcon trainer
+    ppo:
+      # ppo params
+      clip_param: 0.2
+      ppo_epoch: 1  # 减少PPO更新轮数以降低内存和加速训练
+      num_mini_batch: 1  # Must be <= num_environments (1)
+      value_loss_coef: 0.5
+      entropy_coef: 0.01
+      lr: 1e-4  # Reduced learning rate for VLN
+      eps: 1e-5
+      max_grad_norm: 0.5  # Increased for VLN stability
+      num_steps: 64
+      use_gae: True
+      gamma: 0.99
+      tau: 0.95
+      use_linear_clip_decay: False
+      use_linear_lr_decay: True  # Enable for VLN
+      reward_window_size: 50
+
+      use_normalized_advantage: False
+
+      hidden_size: 512
+
+      # Use double buffered sampling, typically helps
+      # when environment time is similar or larger than
+      # policy inference time during rollout generation
+      use_double_buffered_sampler: False
+
+    ddppo:
+      sync_frac: 0.6
+      # The PyTorch distributed backend to use
+      distrib_backend: NCCL
+      # Visual encoder backbone
+      pretrained_weights: /share/home/u14004/dhj/Falcon-main/evaluation-vln/dynamic_vlnce_clip_direct_il_v1/hm3d/checkpoints/ckpt.epoch_5.step_20095.pth
+      # Initialize with pretrained weights
+      pretrained: False # For finetune
+      # Initialize just the visual encoder backbone with pretrained weights
+      pretrained_encoder: False
+      # Whether the visual encoder backbone will be trained.
+      train_encoder: False
+      # Whether to reset the critic linear layer
+      reset_critic: True
+
+      # Model parameters
+      backbone: resnet50_clip_attnpool
+      rnn_type: LSTM
+      num_recurrent_layers: 2
+      
+      # CLIP Visual Encoder Configuration
+      # 指定CLIP使用的RGB和Depth传感器键名（注意：需要去掉agent_0_前缀）
+      clip_visual_sensors:
+        # RGB传感器列表（按处理顺序，支持多个视角融合）
+        rgb_keys:
+          - overhead_front_rgb  # 俯视前方RGB（默认启用）
+          - third_rgb  # 第三视角RGB（取消注释以启用多视角融合）
+          # - articulated_agent_jaw_rgb  # 第一人称RGB（取消注释以启用）
+        
+        # Depth传感器列表（按处理顺序，支持多个视角融合）
+        depth_keys:
+          - overhead_front_depth  # 俯视前方深度（默认启用）
+          - third_depth  # 第三视角深度（取消注释以启用多视角融合）
+          # - articulated_agent_jaw_depth  # 第一人称深度（取消注释以启用）
+        
+        # 多视角融合模式（当有多个RGB或depth传感器时生效）
+        # - "average": 特征级平均融合（内存友好，推荐）
+        # - "concat": 特征拼接后线性投影（增加参数量）
+        # - "attention": 自注意力加权融合（效果最好，但计算量大）
+        fusion_mode: "average"
+        
+        # 是否在融合前对每个视角的特征进行归一化（推荐True）
+        normalize_before_fusion: True
+      
+    auxiliary_losses: 
+      people_counting:
+        max_human_num: 6
+        loss_scale: 0.1   
+      guess_human_position:
+        max_human_num: 6
+        position_dim: 2
+        loss_scale: 0.1   
+      future_trajectory_prediction:
+        max_human_num: 6
+        future_step: 4
+        loss_scale: 0.1       

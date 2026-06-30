@@ -1,0 +1,11 @@
+# @package habitat.dataset
+
+defaults:
+  - /habitat/dataset: dataset_config_schema
+  - _self_
+
+type: PointNav-v1-MultiFile  # 使用多文件数据集类
+split: train
+data_path: data/datasets/pointnav-vln/{split}  # 指向目录而不是单个文件
+# 注意：max_episodes_per_file 参数不在 DatasetConfig schema 中，需要在代码中通过 getattr 读取
+# 如需设置，可以在主配置文件中通过 habitat.dataset._self_ 添加，或修改代码使用默认值 None（加载所有episodes）

@@ -1,0 +1,93 @@
+# ==============================================================================
+# 文件: brain_ppo_ablation.yaml
+# 描述: Brain消融实验配置
+# ==============================================================================
+
+"""
+消融实验配置
+=============
+
+提供不同的Brain配置组合用于消融实验：
+1. 仅行人检测 (ped_only)
+2. 仅Brain无行人检测 (brain_no_ped) - 不推荐
+3. 全功能Brain (full_brain)
+"""
+
+# 配置组1: 仅行人检测
+brain_ped_only_config: &brain_ped_only
+  enabled: false
+  pedestrian_enabled: true
+  pedestrian_detector: "yolov8n"
+  pedestrian_confidence: 0.25
+  model_type: "gemma4_e2b"
+  brain_device: "cuda"
+  override_threshold: 0.8
+  freeze_brain: true
+  freeze_pedestrian: true
+  freeze_clip: true
+
+# 配置组2: 全功能Brain
+brain_full_config: &brain_full
+  enabled: true
+  pedestrian_enabled: true
+  pedestrian_detector: "yolov8n"
+  pedestrian_confidence: 0.25
+  model_type: "gemma4_e2b"
+  brain_device: "cuda"
+  override_threshold: 0.8
+  enable_reasoning: true
+  freeze_brain: true
+  freeze_pedestrian: true
+  freeze_clip: true
+
+# 配置组3: 不同检测器
+brain_yolov8s_config: &brain_yolov8s
+  enabled: true
+  pedestrian_enabled: true
+  pedestrian_detector: "yolov8s"        # 更高精度
+  pedestrian_confidence: 0.25
+  model_type: "gemma4_e2b"
+  brain_device: "cuda"
+  override_threshold: 0.8
+  freeze_brain: true
+  freeze_pedestrian: true
+  freeze_clip: true
+
+# 配置组4: 更强Gemma模型
+brain_gemma4_e4b_config: &brain_gemma4_e4b
+  enabled: true
+  pedestrian_enabled: true
+  pedestrian_detector: "yolov8n"
+  pedestrian_confidence: 0.25
+  model_type: "gemma4_e4b"               # 更强模型
+  brain_device: "cuda"
+  override_threshold: 0.8
+  freeze_brain: true
+  freeze_pedestrian: true
+  freeze_clip: true
+
+# 配置组5: 不同的覆盖阈值
+brain_low_threshold_config: &brain_low_threshold
+  enabled: true
+  pedestrian_enabled: true
+  pedestrian_detector: "yolov8n"
+  pedestrian_confidence: 0.25
+  model_type: "gemma4_e2b"
+  brain_device: "cuda"
+  override_threshold: 0.5                # 更低的阈值
+  freeze_brain: true
+  freeze_pedestrian: true
+  freeze_clip: true
+
+# 配置组6: 不同的覆盖阈值(高)
+brain_high_threshold_config: &brain_high_threshold
+  enabled: true
+  pedestrian_enabled: true
+  pedestrian_detector: "yolov8n"
+  pedestrian_confidence: 0.25
+  model_type: "gemma4_e2b"
+  brain_device: "cuda"
+  override_threshold: 0.95               # 更高的阈值
+  freeze_brain: true
+  freeze_pedestrian: true
+  freeze_clip: true

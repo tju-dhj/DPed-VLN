@@ -1,0 +1,11 @@
+# VLN Sensors Configuration
+# Note: instruction_sensor and gt_action_sensor are defined in their own config files
+# to avoid duplication
+
+@registry.register_sensor(name="vln_instruction_sensor")
+class VLNInstructionSensorConfig:
+  type: "VLNInstructionSensor"
+  uuid: "vln_instruction"  # Changed to avoid duplication
+  language_encoder:
+    model_name: "openai/clip-vit-base-patch32"
+    hidden_size: 512

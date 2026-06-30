@@ -1,0 +1,233 @@
+# @package _global_
+# ════════════════════════════════════════════════════════════════════════════
+# 极小样本过拟合诊断配置 (8 episodes)
+# ════════════════════════════════════════════════════════════════════════════
+# 目的：验证模型/输入/标签/RNN/loss 是否有根本性 bug
+#
+# 判断标准：
+#   - train loss 应该明显低于 0.3
+#   - overall acc 应该 > 0.9
+#   - macro acc 应该 > 0.7
+#   - stop recall 应该 > 0.5
+#
+# 如果 8 条 episode 都过拟合不了，说明代码/输入/标签有 bug，
+# 不应该用完整数据集训练。
+#
+# 用法：
+#   python -m habitat_baselines.run \
+#     --config-name DPed_pro/new_data/IL/il_debug_overfit_8
+# ════════════════════════════════════════════════════════════════════════════
+
+defaults:
+  - /benchmark/nav/socialnav_v2: falcon_hm3d_task_for_train_vln
+  - /habitat_baselines: habitat_baselines_il_config_base
+  - /habitat/simulator/sim_sensors@habitat_baselines.eval.extra_sim_sensors.third_rgb_sensor: third_rgb_sensor
+  - /habitat_baselines/il/policy@habitat_baselines.il.policy.agent_1: single_fixed
+  - /habitat_baselines/il/policy@habitat_baselines.il.policy.agent_2: single_fixed
+  - /habitat_baselines/il/policy@habitat_baselines.il.policy.agent_3: single_fixed
+  - /habitat_baselines/il/policy@habitat_baselines.il.policy.agent_4: single_fixed
+  - /habitat_baselines/il/policy@habitat_baselines.il.policy.agent_5: single_fixed
+  - /habitat_baselines/il/policy@habitat_baselines.il.policy.agent_6: single_fixed
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_stop: discrete_stop
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_move_forward: discrete_move_forward
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_turn_left: discrete_turn_left
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_turn_right: discrete_turn_right
+  - /habitat/task/actions@habitat.task.actions.agent_1_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+  - /habitat/task/actions@habitat.task.actions.agent_2_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+  - /habitat/task/actions@habitat.task.actions.agent_3_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+  - /habitat/task/actions@habitat.task.actions.agent_4_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+  - /habitat/task/actions@habitat.task.actions.agent_5_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+  - /habitat/task/actions@habitat.task.actions.agent_6_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+  - /habitat/task/lab_sensors@habitat.task.lab_sensors.agent_0_pointgoal_with_gps_compass: pointgoal_with_gps_compass_sensor
+  - _self_
+
+habitat:
+  dataset:
+    split: train
+    type: DynamicVLNCE-v1
+    data_path: "/share/home/u19666033/dhj/DPed_pro/data/dynamic_dataset_final_v1/train/{scene}.json.gz"
+    scenes_dir: "/share/home/u19666033/dhj/DPed_pro/data/scene_datasets/hm3d"
+    content_scenes: ["*"]
+  environment:
+    iterator_options:
+      shuffle: True
+      cycle: True
+  gym:
+    obs_keys:
+      - agent_0_overhead_front_rgb
+      - agent_0_overhead_front_depth
+      - agent_0_starting_point_gps_compass
+      - agent_0_localization_sensor
+      - agent_0_human_num_sensor
+      - agent_0_oracle_humanoid_future_trajectory
+      - agent_0_falcon_instruction
+      - agent_0_falcon_gt_action
+  task:
+    actions:
+      agent_0_discrete_stop:
+        lin_speed: 0.0
+        ang_speed: 0.0
+      agent_0_discrete_move_forward:
+        lin_speed: 30.0
+        ang_speed: 0.0
+        allow_dyn_slide: True
+      agent_0_discrete_turn_left:
+        lin_speed: 0.0
+        ang_speed: 31.415926535897
+        allow_dyn_slide: True
+      agent_0_discrete_turn_right:
+        lin_speed: 0.0
+        ang_speed: -31.415926535897
+        allow_dyn_slide: True
+      agent_1_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_2_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_3_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_4_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_5_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+      agent_6_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 10.0
+        ang_speed: 10.0
+        allow_dyn_slide: True
+
+habitat_baselines:
+  evaluate: False
+  verbose: True
+  trainer_name: "direct_il"
+  torch_gpu_id: 0
+  tensorboard_dir: "evaluation-vlnce-dpedpro/debug_overfit_8/tb"
+  test_episode_count: -1
+  checkpoint_folder: "evaluation-vlnce-dpedpro/debug_overfit_8/checkpoints"
+  num_updates: -1
+  total_num_steps: 15000000
+  log_interval: 1  # 每步都输出日志，方便细粒度观察
+  log_file: "evaluation-vlnce-dpedpro/debug_overfit_8/train.log"
+  num_checkpoints: 50
+  checkpoint_interval: 10  # 每10个epoch保存一次
+  force_torch_single_threaded: False
+  load_resume_state_config: False
+
+  eval:
+    use_ckpt_config: False
+    should_load_ckpt: True
+
+  il:
+    # ════════════════════════════════════════════════════════════════
+    # 过拟合诊断关键参数
+    # ════════════════════════════════════════════════════════════════
+    epochs: 200
+    batch_size: 2
+    use_amp: True
+    use_iw: False
+    inflection_weight_coef: 1.0
+    dataloader_num_workers: 0
+    pin_memory: False
+
+    # 关键：先关掉 class weight，排除权重干扰
+    class_weight_enabled: False
+
+    distributed:
+      enabled: False
+      backend: "nccl"
+      init_method: "env://"
+      world_size: -1
+      rank: -1
+      local_rank: -1
+      find_unused_parameters: False
+      broadcast_buffers: True
+      gradient_as_bucket_view: False
+
+    eval_save_results: False
+    log_metrics: False
+    output_log_dir: "evaluation-vlnce-dpedpro/debug_overfit_8/logs"
+    results_dir: "evaluation-vlnce-dpedpro/debug_overfit_8/results/{split}"
+    save_resume_state_interval: 100
+    save_state_batch_only: False
+
+    agent:
+      type: "MultiAgentAccessMgr"
+      num_agent_types: 7
+      num_active_agents_per_type: [1, 1, 1, 1, 1, 1, 1]
+      num_pool_agents_per_type: [1, 1, 1, 1, 1, 1, 1]
+      agent_sample_interval: 20
+      force_partner_sample_idx: -1
+
+    policy:
+      agent_0:
+        name: "PointNavResNetPolicy"
+        action_distribution_type: "categorical"
+
+    model:
+      hidden_size: 512
+      backbone: resnet50_clip_attnpool
+      rnn_type: LSTM
+      num_recurrent_layers: 2
+      use_text_instruction: True
+      instruction_matching_mode: "episode_based"
+      text_encoder_dim: 2048
+      fusion_method: attention
+      clip_visual_sensors:
+        rgb_keys:
+          - overhead_front_rgb
+        depth_keys:
+          - overhead_front_depth
+        fusion_mode: "attention"
+        normalize_before_fusion: True
+      pretrained_weights: /share/home/u19666033/dhj/DPed_pro/pretrained_model/falcon_pretrained_25.pth
+      pretrained: True
+      pretrained_encoder: False
+      train_encoder: False
+
+    optim:
+      lr: 1e-4
+      eps: 1e-5
+      max_grad_norm: 0.5
+      # 关键：关掉 scheduler，排除衰减干扰
+      use_lr_scheduler: False
+
+    direct_il:
+      dataset_type: "json"
+      window_size: 1
+      data_root: "/share/home/u19666033/dhj/DPed_pro/dped_pro_resplit/train"
+      rgb_data_roots:
+        - "/share/home/u19666033/dhj/DPed_pro/data/collect_data/train"
+        - "/share/home/u19666033/dhj/DPed_pro/data/collect_data/val"
+
+      # ════════════════════════════════════════════════════════════════
+      # 过拟合核心：只用 8 条 episode
+      # ════════════════════════════════════════════════════════════════
+      max_episodes: 8
+      max_episode_length: 400
+      instruction_priority:
+        - instruction_vl_level_1
+      disable_rgb_decode: False  # 过拟合实验先保留视觉
+
+      # 动态导航状态参数（与 habitat-lab 默认值一致）
+      forward_step_size: 0.25
+      turn_angle_deg: 10.0

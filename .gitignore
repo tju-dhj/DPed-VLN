@@ -120,3 +120,94 @@ __pycache__/
 .DS_Store
 .vscode/
 .idea/
+
+# =========================
+# Extra logs / outputs
+# =========================
+logs/
+log/
+output/
+outputs/
+results/
+res/
+navila-output/
+pic_dir/
+test_images/
+sbatch/
+sbatch_brain_test/
+share/
+
+slurm-*.out
+*.out
+*.log
+train.log
+build_v1_v2_log_*.txt
+
+# =========================
+# Large model / weight files
+# =========================
+*.pt
+*.pt.*
+*.pth
+*.ckpt
+*.safetensors
+*.bin
+*.whl
+
+yolov8n-seg.pt*
+Long-CLIP/checkpoints/
+CLIP/checkpoints/
+dinov3/checkpoints/
+
+# =========================
+# Data / generated analysis
+# =========================
+data/
+**/data/
+**/data/**
+datasets/
+**/datasets/
+**/datasets/**
+scene_datasets/
+**/scene_datasets/
+**/scene_datasets/**
+
+brain_records*/
+**/brain_records*/
+**/brain_records*/**
+
+dataset_analysis*/
+**/dataset_analysis*/
+**/dataset_analysis*/**
+
+ped_detection_results/
+**/ped_detection_results/
+**/ped_detection_results/**
+
+evaluation/
+*evaluation*/
+**/*evaluation*/**
+eval_out/
+**/eval_out/
+**/eval_out/**
+
+# =========================
+# Temporary / weird shell artifacts
+# =========================
+0.5
+100
+=4.50.0
+[151646],
+[151647]
+Untitled
+
+# =========================
+# Python cache
+# =========================
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/

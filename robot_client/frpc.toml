@@ -1,0 +1,57 @@
+# =============================================================================
+# FRP 客户端配置 (frpc.toml) — 部署在 GPU 服务器（瑶光）上
+# =============================================================================
+# 安装 frpc:
+#   wget https://github.com/fatedier/frp/releases/download/v0.61.0/frp_0.61.0_linux_amd64.tar.gz
+#   tar -xzf frp_0.61.0_linux_amd64.tar.gz -C /opt/
+#   ln -s /opt/frp_0.61.0_linux_amd64/frpc /usr/local/bin/frpc
+#   frpc -c /path/to/frpc.toml
+# =============================================================================
+
+# 连接到 FRP 服务端
+serverAddr = "YOUR_PUBLIC_SERVER_IP"    # <--- 改成你的公网服务器IP
+serverPort = 7000
+
+# Token 认证（必须与 frps 一致）
+auth.token = "CHANGE_THIS_TOKEN_FOR_SECURITY"
+
+# 日志
+log.to = "/share/home/u19666033/dhj/DPed_pro/robot_client/frpc.log"
+log.level = "info"
+log.maxDays = 7
+
+# =============================================================================
+# 穿透规则: 将 GPU 服务器的 Flask 端口暴露到公网
+# =============================================================================
+
+# 4动作基础版 (dped_trainer_server, port 32145)
+[[proxies]]
+name = "vln-4a-base"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 32145
+remotePort = 32145
+
+# 4动作 + 8B Brain版 (dped_brain_trainer_server, port 32146)
+[[proxies]]
+name = "vln-4a-8b"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 32146
+remotePort = 32146
+
+# 6动作基础版 (port 32147，与4动作区分)
+[[proxies]]
+name = "vln-6a-base"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 32147
+remotePort = 32147
+
+# 6动作 + 8B Brain版 (port 32148，与4动作区分)
+[[proxies]]
+name = "vln-6a-8b"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 32148
+remotePort = 32148

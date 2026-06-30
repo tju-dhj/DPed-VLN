@@ -1,0 +1,43 @@
+# @package _global_
+
+defaults:
+  - /DPed_pro/new_data/IL/il_debug_overfit_32
+  - _self_
+
+habitat_baselines:
+  tensorboard_dir: "evaluation-vlnce-dpedpro/debug_overfit_32_aligned/tb"
+  checkpoint_folder: "evaluation-vlnce-dpedpro/debug_overfit_32_aligned/checkpoints"
+  log_file: "evaluation-vlnce-dpedpro/debug_overfit_32_aligned/train.log"
+  log_interval: 10
+  num_checkpoints: 50
+  checkpoint_interval: 10
+
+  il:
+    epochs: 300
+    batch_size: 2
+    use_amp: False
+    use_iw: False
+    inflection_weight_coef: 1.0
+    class_weight_enabled: False
+    output_log_dir: "evaluation-vlnce-dpedpro/debug_overfit_32_aligned/logs"
+    results_dir: "evaluation-vlnce-dpedpro/debug_overfit_32_aligned/results/{split}"
+
+    model:
+      train_encoder: False
+
+    optim:
+      lr: 1e-4
+      use_lr_scheduler: False
+
+    direct_il:
+      max_episodes: 32
+      window_size: 0
+      max_episode_length: 400
+      future_step: 4
+      disable_rgb_decode: False
+
+hydra:
+  job:
+    name: "il_debug_overfit_32_aligned"
+  run:
+    dir: "outputs/il_debug_overfit_32_aligned/${now:%Y-%m-%d_%H-%M-%S}"

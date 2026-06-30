@@ -1,0 +1,39 @@
+# VLN HM3D Task Configuration
+defaults:
+  - /habitat/task: falcon_task_detail
+  - /habitat/task/measurements: falcon_measurements
+  - /habitat/task/sensors: falcon_sensors
+  - /habitat/task/success: success
+  - /habitat/task/spl: spl
+  - /habitat/task/ndtw: ndtw
+  - /habitat/task/sdtw: sdtw
+  - /habitat/task/path_length: path_length
+
+habitat:
+  task:
+    type: "FalconTask-v2"
+    success_reward: 10.0
+    slack_reward: -0.01
+    success_distance: 0.2
+    goal_sensor_uuid: "pointgoal_with_gps_compass"
+    instruction_sensor_uuid: "falcon_instruction"
+    gt_action_sensor_uuid: "falcon_gt_action"
+    
+  simulator:
+    type: "RearrangeSim-v2"
+    scene: "data/scene_datasets/hm3d/train/00009-vLpv2VX547B/vLpv2VX547B.basis.glb"
+    default_agent: 0
+    agents:
+      - sim_sensors:
+          - type: "HabitatSimRGBSensor"
+            height: 256
+            width: 256
+          - type: "HabitatSimDepthSensor"
+            height: 256
+            width: 256
+          - type: "HabitatSimSemanticSensor"
+            height: 256
+            width: 256
+          - type: "PointGoalWithGPSCompassSensor"
+            goal_format: "POLAR"
+          # InstructionSensor and GT_ActionSensor are added via config references above

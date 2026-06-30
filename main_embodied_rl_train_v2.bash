@@ -1,0 +1,26 @@
+#!/bin/bash
+#SBATCH --job-name=embodied_v2
+#SBATCH --output=slurm_logs/embodied-v2/%j_%x.out
+#SBATCH --error=slurm_logs/embodied-v2/%j_%x.err
+#SBATCH --wckey=p14004
+#SBATCH -A p_p14004
+#SBATCH -p A800
+#SBATCH --nodes=1                # 申请1个节点
+#SBATCH --ntasks=1               # 申请1个任务(进程)
+#SBATCH --cpus-per-task=7   
+#SBATCH --gres=gpu:a800:1
+# 设置CUDA内存分配策略
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+
+# 设置环境变量以避免malloc错误
+export MALLOC_TRIM_THRESHOLD_=0
+export MALLOC_MMAP_THRESHOLD_=131072
+
+source /share/home/u14004/.bashrc
+conda activate falcon
+
+# 切换到工作目录
+cd /share/home/u14004/dhj/Falcon-main
+
+# python -u -m habitat-baselines.habitat_baselines.run --config-name=dynamic_vlnce/dynamic_vlnce_hm3d_direct_il_train_v2.yaml
+python -u -m habitat-baselines.habitat_baselines.run --config-name=embodied_sensor_vlnce/embodied_sensor_train_rl_v2.yaml

@@ -1,0 +1,213 @@
+# @package _global_
+# NaVILA消融实验：完全移除动态行人（静态场景）
+
+defaults:
+  - /benchmark/nav/socialnav_v2: falcon_hm3d_task
+  - /habitat_baselines: habitat_baselines_rl_config_base
+  - /habitat/simulator/sim_sensors@habitat_baselines.eval.extra_sim_sensors.third_rgb_sensor: third_rgb_sensor 
+  # ============ 消融：保留人类agent策略（但会配置为静止） ============
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_1: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_2: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_3: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_4: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_5: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_6: single_fixed
+  # ====================================================
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_stop: discrete_stop
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_move_forward: discrete_move_forward
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_turn_left: discrete_turn_left
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_turn_right: discrete_turn_right
+  # ============ 消融：配置人类agent的动作为"静止"（速度为0） ============
+  - /habitat/task/actions@habitat.task.actions.agent_1_oracle_nav_randcoord_action_obstacle: oracle_nav_action 
+  - /habitat/task/actions@habitat.task.actions.agent_2_oracle_nav_randcoord_action_obstacle: oracle_nav_action 
+  - /habitat/task/actions@habitat.task.actions.agent_3_oracle_nav_randcoord_action_obstacle: oracle_nav_action 
+  - /habitat/task/actions@habitat.task.actions.agent_4_oracle_nav_randcoord_action_obstacle: oracle_nav_action 
+  - /habitat/task/actions@habitat.task.actions.agent_5_oracle_nav_randcoord_action_obstacle: oracle_nav_action 
+  - /habitat/task/actions@habitat.task.actions.agent_6_oracle_nav_randcoord_action_obstacle: oracle_nav_action 
+  # ====================================================
+  - /habitat/task/lab_sensors@habitat.task.lab_sensors.agent_0_pointgoal_with_gps_compass: pointgoal_with_gps_compass_sensor
+  - _self_
+
+habitat:
+  dataset:
+    type: "DynamicVLNCE-v1"
+    split: val
+    data_path: "/share/home/u14004/dhj/Falcon-main/data/dynamic_dataset_final_v1/val_full/{scene}.json.gz"
+    scenes_dir: "/share/home/u14004/dhj/Falcon-main/data/scene_datasets/hm3d"
+    content_scenes: ["*"]
+  environment:
+    iterator_options:
+      shuffle: False
+  # ============ 消融：不修改simulator配置，让它保持默认 ============
+  # 注意：虽然agents配置中有7个agent，但我们通过不配置agent_1-6的动作
+  # 来让它们保持静止（不移动），从而达到"静态场景"的效果
+  # ================================================================
+  gym:
+    obs_keys: 
+      - agent_0_overhead_front_rgb
+      - agent_0_overhead_front_depth
+      - agent_0_third_rgb
+      - agent_0_third_depth
+      - agent_0_pointgoal_with_gps_compass
+      - agent_0_localization_sensor
+      # ============ 消融：移除人相关的观测 ============
+      # - agent_0_human_num_sensor
+      # - agent_0_oracle_humanoid_future_trajectory
+      # ============================================
+      - agent_0_falcon_instruction
+      - agent_0_falcon_gt_action
+  task:
+    # ============ 消融：使用简单的距离奖励 ============
+    reward_measure: distance_to_goal_reward
+    # ================================================
+    measurements:
+      success:
+        type: Success
+        success_distance: 3.0
+      distance_to_goal_reward:
+        type: DistanceToGoalReward
+      # 保留用于监控（但所有惩罚都为0）
+      multi_agent_nav_reward:
+        type: MultiAgentNavReward
+        use_geo_distance: true
+        allow_distance: 2.0
+        collide_scene_penalty: 0.0
+        collide_human_penalty: 0.0
+        close_to_human_penalty: 0.0
+        trajectory_cover_penalty: 0.0
+        cover_future_dis_thre: 0.05
+        robot_idx: 0
+        facing_human_dis: 2.0
+        human_face_robot_threshold: 0.5
+    actions:
+      agent_0_discrete_stop:
+        lin_speed: 0.0 
+        ang_speed: 0.0
+      agent_0_discrete_move_forward:
+        lin_speed: 30.0
+        ang_speed: 0.0
+        allow_dyn_slide: True
+      agent_0_discrete_turn_left:
+        lin_speed: 0.0
+        ang_speed: 31.415926535897  # NaVILA使用15度步长
+        allow_dyn_slide: True
+      agent_0_discrete_turn_right:
+        lin_speed: 0.0
+        ang_speed: -31.415926535897  # NaVILA使用15度步长
+        allow_dyn_slide: True
+      # ============ 消融：人类agent动作速度设为0（静止） ============
+      agent_1_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle 
+        motion_control: human_joints
+        lin_speed: 0.0  # 设为0，不移动
+        ang_speed: 0.0  # 设为0，不转向
+        allow_dyn_slide: False
+      agent_2_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle 
+        motion_control: human_joints
+        lin_speed: 0.0
+        ang_speed: 0.0
+        allow_dyn_slide: False
+      agent_3_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle 
+        motion_control: human_joints
+        lin_speed: 0.0
+        ang_speed: 0.0
+        allow_dyn_slide: False
+      agent_4_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle 
+        motion_control: human_joints
+        lin_speed: 0.0
+        ang_speed: 0.0
+        allow_dyn_slide: False
+      agent_5_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle 
+        motion_control: human_joints
+        lin_speed: 0.0
+        ang_speed: 0.0
+        allow_dyn_slide: False
+      agent_6_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle 
+        motion_control: human_joints
+        lin_speed: 0.0
+        ang_speed: 0.0
+        allow_dyn_slide: False
+      # ============================================================
+
+habitat_baselines:
+  evaluate: True
+  verbose: True 
+  trainer_name: "ddppo"
+  torch_gpu_id: 0
+  tensorboard_dir: "evaluation-vln-test/navila_falcon_v1_ablation_static_only/hm3d/tb"
+  # video_dir: "evaluation-vln-test/navila_falcon_v1_ablation_static_only/hm3d/video"
+  test_episode_count: -1
+  eval_ckpt_path_dir: "pretrained_model/navila_checkpoint"
+  num_environments: 1
+  checkpoint_folder: "evaluation-vln-test/navila_falcon_v1_ablation_static_only/hm3d/checkpoints"
+  num_updates: -1
+  total_num_steps: 1e8
+  log_interval: 10
+  num_checkpoints: 200
+  force_torch_single_threaded: True
+  load_resume_state_config: False
+
+  evaluator:
+    _target_: habitat_baselines.rl.ppo.navila_evaluator.NaVILAEvaluator
+
+  eval:
+    use_ckpt_config: False 
+    should_load_ckpt: False
+    max_steps_per_episode: 500
+
+  rl:
+    agent:
+      type: "MultiAgentAccessMgr"
+      # ============ 消融：保持7个agent，但人类agent不配置动作（静止） ============
+      num_agent_types: 7  # 保持7个agent类型
+      num_active_agents_per_type: [1, 1, 1, 1, 1, 1, 1]
+      num_pool_agents_per_type: [1, 1, 1, 1, 1, 1, 1]
+      # 注意：agent_1-6没有配置动作，所以它们会保持静止，形成"静态障碍物"
+      # =======================================================
+      agent_sample_interval: 20 
+      force_partner_sample_idx: -1
+    policy:
+      agent_0:
+        name: "NaVILAPolicy"
+        model_path: "pretrained_model/navila_checkpoint"
+        num_video_frames: 4
+        forward_step: 25
+        turn_step: 15
+        action_distribution_type: "categorical"
+    ppo:
+      clip_param: 0.2
+      ppo_epoch: 2
+      num_mini_batch: 2
+      value_loss_coef: 0.5
+      entropy_coef: 0.01
+      lr: 2.5e-4
+      eps: 1e-5
+      max_grad_norm: 0.2
+      num_steps: 128
+      use_gae: True
+      gamma: 0.99
+      tau: 0.95
+      use_linear_clip_decay: False
+      use_linear_lr_decay: False
+      reward_window_size: 50
+      use_normalized_advantage: False
+      hidden_size: 512
+      use_double_buffered_sampler: False
+
+    ddppo:
+      sync_frac: 0.6
+      distrib_backend: NCCL
+      force_distributed: False
+      pretrained: False
+      pretrained_encoder: False
+      train_encoder: False
+      reset_critic: True
+      backbone: resnet50
+      rnn_type: LSTM
+      num_recurrent_layers: 2
+

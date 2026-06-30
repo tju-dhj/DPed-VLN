@@ -1,0 +1,249 @@
+# ==============================================================================
+# 文件: brain_ppo_train_v2_ddppo.yaml
+# 描述: Brain增强PPO训练配置 - 基于DynamicVLNCE DDPPO v2训练配置
+# ==============================================================================
+
+"""
+BrainPPOTrainer训练配置
+========================
+
+该配置文件定义了Brain增强的VLN PPO训练参数，
+包括Brain模块配置、行人检测配置和Gemma Brain配置。
+
+主要配置项：
+- trainer_name: brain_ppo_trainer
+- brain模块: 启用/禁用Brain、Gemma模型类型
+- pedestrian模块: 检测器类型、置信度阈值
+- 训练参数: 学习率、batch size等
+
+使用方式：
+```bash
+python -m habitat_baselines.run \
+    --config-name=DPed_brain/brain_ppo_train_v2_ddppo \
+    habitat_baselines.num_environments=8
+```
+"""
+
+# =============================================================================
+# 顶层配置
+# =============================================================================
+
+defaults:
+  - /dynamic_vlnce_ddppo/dynamic_vlnce_ddppo_hm3d_train_v2_ddppo  # 继承基础DDPPO配置
+  - override /habitat: habitat_config
+  - override /habitat_baselines: base_train_config
+
+# =============================================================================
+# Habitat环境配置
+# =============================================================================
+
+habitat:
+  # 环境类型
+  environment:
+    max_episode_steps: 400              # 最大episode长度
+
+  # 数据集配置
+  dataset:
+    type: "DynamicVLNCE-v1"
+    split: train
+    data_path: "data/datasets/dynamic_vlnce_v1/{split}.json.gz"
+
+  # 传感器配置
+  gym:
+    generate_iterator_type: true
+    observation_keys: null               # 使用默认观测键
+
+# =============================================================================
+# Habitat-Baselines通用配置
+# =============================================================================
+
+habitat_baselines:
+  # ----------------------------------------
+  # 训练器配置
+  # ----------------------------------------
+  trainer_name: "brain_ppo_trainer"      # Brain增强的PPO训练器
+
+  # 并行环境配置
+  num_environments: 8                    # 并行环境数量
+  total_num_steps: 50000000              # 总训练步数
+
+  # 预训练模型路径(可选)
+  pretrained_encoder_path: null          # 预训练的视觉编码器
+  pretrained_il_path: null              # 模仿学习checkpoint
+
+  # ----------------------------------------
+  # RL配置
+  # ----------------------------------------
+  rl:
+    # Agent配置
+    agent:
+      type: "MultiAgentAccessMgr"       # 多智能体访问管理器
+      num_agent_types: 7                # 7种智能体类型
+
+    # PPO配置
+    ppo:
+      num_steps: 64                     # Rollout步数
+      num_mini_batch: 2                 # Mini-batch数量
+      lr: 1e-4                          # 学习率
+      eps: 1e-5                         # Adam epsilon
+      gamma: 0.99                       # 折扣因子
+      lambd: 0.95                       # GAE lambda
+      entropy_coef: 0.01                # 熵正则化系数
+      value_loss_coef: 0.5              # 价值损失系数
+      max_grad_norm: 5.0                 # 梯度裁剪
+      use_gae: true                     # 使用GAE
+      use_linear_lr_decay: false         # 线性学习率衰减
+      use_clipped_value_loss: true      # 裁剪价值损失
+      clip_param: 0.2                   # PPO裁剪参数
+      hidden_size: 256                  # 隐藏层大小
+      rnn_type: "GRU"                   # RNN类型
+      num_recurrent_layers: 1           # RNN层数
+
+    # DDPPO配置
+    ddppo:
+      sync_frac: 0.6                    # 同步比例
+      max_step_replay: 1.5              # 最大步长重放比例
+      plugin: true                       # 使用DDPPO插件
+      rnn_type: "GRU"
+      num_recurrent_layers: 1           # RNN层数
+      use_large_ddppo: false             # 使用大规模DDPPO
+      train_encoder: false              # 冻结视觉编码器(训练时)
+
+  # ----------------------------------------
+  # 辅助损失配置
+  # ----------------------------------------
+  auxiliary_losses:
+    # 人员计数损失
+    people_counting:
+      enabled: true
+      weight: 0.1
+
+    # 行人位置预测损失
+    guess_human_position:
+      enabled: true
+      weight: 0.1
+
+    # 未来轨迹预测损失
+    future_trajectory_prediction:
+      enabled: false
+      num_future_steps: 5
+      weight: 0.05
+
+  # ----------------------------------------
+  # 动作空间配置
+  # ----------------------------------------
+  action_space:
+    type: "6dof"                        # 6自由度动作空间
+    move_forward:
+      lin_speed: 25.0
+      max_speed: 30.0
+    turn_left:
+      ang_speed: 10.0
+    turn_right:
+      ang_speed: 10.0
+    move_backward:
+      lin_speed: 10.0
+    pause:
+      duration: 1
+
+  # ----------------------------------------
+  # 视觉编码器配置
+  # ----------------------------------------
+  visual_encoder:
+    name: "ResNet50"                     # 编码器名称
+    pretrained: true                    # 使用预训练权重
+    frozen: false                       # 训练时微调
+
+  # ----------------------------------------
+  # 评估配置
+  # ----------------------------------------
+  evaluators:
+    - type: FALCONEvaluator
+      name: "brain_ppo_evaluator"
+
+  # ----------------------------------------
+  # 检查点配置
+  # ----------------------------------------
+  checkpoint:
+    save_interval: 100                  # 每N个epoch保存一次
+    keep_last_n: 5                      # 保留最后N个checkpoint
+    resume_state: true                  # 支持状态恢复
+
+# =============================================================================
+# Brain模块配置 - 核心新增配置
+# =============================================================================
+
+  brain:
+    # ----------------------------------------
+    # 总体开关
+    # ----------------------------------------
+    enabled: true                        # 是否启用Brain模块
+
+    # ----------------------------------------
+    # 行人检测配置
+    # ----------------------------------------
+    pedestrian_enabled: true             # 是否启用行人检测
+    pedestrian_detector: "yolov8n"      # 检测器类型: yolov8n/s/m, rtdetr_r18, rtdetr_r50
+    pedestrian_confidence: 0.25          # 置信度阈值
+    pedestrian_input_size: 640           # 输入图像尺寸
+
+    # ----------------------------------------
+    # Gemma Brain配置
+    # ----------------------------------------
+    model_type: "gemma4_e2b"             # Gemma模型类型: gemma4_e2b, gemma4_e4b
+    model_id: null                       # HuggingFace模型ID (null使用默认)
+    brain_device: "cuda"                 # Brain模型设备
+    cache_dir: null                      # 模型缓存目录
+
+    # 推理配置
+    max_new_tokens: 256                  # 最大生成token数
+    temperature: 0.7                      # 采样温度
+    top_p: 0.9                           # Nucleus采样
+    enable_reasoning: true               # 启用推理过程输出
+
+    # 决策配置
+    override_threshold: 0.8              # 覆盖策略的置信度阈值
+    eval_with_brain: true                # 评估时是否使用Brain
+
+    # 冻结配置 - 训练时关键参数
+    freeze_brain: true                   # 冻结Brain模型参数
+    freeze_pedestrian: true              # 冻结行人检测器
+    freeze_clip: true                   # 冻结CLIP视觉编码器
+
+    # 行人检测器checkpoint路径
+    pedestrian_ckpt_path: null           # YOLO模型权重路径 (null自动下载)
+
+# =============================================================================
+# Tensorboard/日志配置
+# =============================================================================
+
+  tensorboard_dir: "tb_logs/brain_ppo_train"
+  wandb:
+    enabled: false
+    project: "DPed_brain"
+    entity: null
+    tags: ["brain", "vln", "pedestrian"]
+
+# =============================================================================
+# 分布式训练配置
+# =============================================================================
+
+  distributed:
+    backend: "nccl"
+    init_method: "env://"
+    world_size: null                     # 由SLURM自动设置
+
+# =============================================================================
+# 其他配置
+# =============================================================================
+
+hydra:
+  job:
+    name: "brain_ppo_train_v2_ddppo"
+  run:
+    dir: "outputs/brain_ppo_train/${hydra.job.num}/${now:%Y-%m-%d_%H-%M-%S}"
+
+# 搜索路径
+search_paths:
+  - ./
+  - habitat_baselines/

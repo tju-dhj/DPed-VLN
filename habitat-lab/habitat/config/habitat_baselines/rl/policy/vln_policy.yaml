@@ -1,0 +1,28 @@
+# VLN Policy Configuration
+@baseline_registry.register_policy(name="vln_policy")
+class VLNPolicyConfig:
+  name: "VLNPolicy"
+  hidden_size: 512
+  use_dinov3: true
+  use_clip_text: true
+  freeze_visual_encoder: false
+  freeze_language_encoder: false
+  
+  # DINOv3 configuration
+  dinov3:
+    model_name: "dinov3_vitb14"
+    pretrained: true
+    
+  # CLIP text configuration  
+  clip_text:
+    model_name: "openai/clip-vit-base-patch32"
+    max_length: 77
+    
+  # Cross-modal fusion
+  fusion:
+    attention_heads: 8
+    dropout: 0.1
+    hidden_size: 512
+
+
+

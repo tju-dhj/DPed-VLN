@@ -1,0 +1,64 @@
+# VLN HM3D Training Configuration
+defaults:
+  - /habitat_baselines: ppo
+  - /habitat_baselines/rl/policy: vln_policy
+  - /habitat_baselines/rl/ppo: ppo
+  - /habitat_baselines/trainer: vln_il
+  - /habitat/task: vln_hm3d_task
+
+habitat_baselines:
+  trainer: "vln_il"
+  policy:
+    name: "VLNILPolicy"
+    vln_il_policy:
+      use_dinov3: true
+      use_clip_text: true
+      freeze_visual_encoder: false
+      freeze_language_encoder: false
+      il_loss_weight: 1.0
+      il_batch_size: 32
+      il_learning_rate: 3e-4
+      il_epochs: 4
+      expert_data_size: 10000
+  
+  rl:
+    ppo:
+      hidden_size: 512
+      num_epochs: 4
+      num_mini_batch: 2
+      lr: 3e-4
+      eps: 1e-5
+      max_grad_norm: 0.5
+      value_loss_coef: 0.5
+      entropy_coef: 0.01
+      use_gae: true
+      gamma: 0.99
+      tau: 0.95
+      use_linear_lr_decay: true
+      use_linear_clip_decay: true
+      
+  trainer_name: "vln_il"
+  total_num_steps: 10000000
+  num_checkpoints: 10
+  checkpoint_interval: 500000
+  eval_interval: 100000
+  log_interval: 10
+  video_interval: 1000000
+  
+  eval:
+    use_ckpt_path: false
+    ckpt_path: ""
+    video_option: ["disk"]
+    video_dir: "videos"
+    should_load_ckpt: false
+    
+  dataset:
+    type: "PointNav-v1"
+    split: "train"
+    scenes_dir: "data/scene_datasets/hm3d"
+    content_scenes: ["*"]
+    
+  dataset_path: "data/filtered_dataset"
+
+
+

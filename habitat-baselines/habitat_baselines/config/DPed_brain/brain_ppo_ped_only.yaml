@@ -1,0 +1,34 @@
+# ==============================================================================
+# 文件: brain_ppo_ped_only.yaml
+# 描述: 仅行人检测训练配置（无Gemma Brain）
+# ==============================================================================
+
+"""
+消融实验配置 - 仅行人检测
+===========================
+
+该配置只启用行人检测模块，不使用Gemma Brain。
+用于对比分析Brain模块的增益效果。
+"""
+
+defaults:
+  - /DPed_brain/brain_ppo_train_v2_ddppo  # 继承基础配置
+  - override /habitat: habitat_config
+  - override /habitat_baselines: base_train_config
+
+habitat_baselines:
+  brain:
+    # 禁用Gemma Brain，只使用行人检测
+    enabled: false
+    pedestrian_enabled: true              # 仍启用行人检测
+    pedestrian_detector: "yolov8n"
+    pedestrian_confidence: 0.25
+
+    # 冻结配置
+    freeze_brain: true
+    freeze_pedestrian: true
+    freeze_clip: true
+
+hydra:
+  job:
+    name: "brain_ppo_ped_only_train"

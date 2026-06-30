@@ -1,0 +1,55 @@
+# 示例：启用双视角（overhead + third）的CLIP配置
+
+habitat:
+  gym:
+    obs_keys:
+      # 视觉传感器
+      - agent_0_overhead_front_rgb      # 俯视前方RGB ✅
+      - agent_0_overhead_front_depth    # 俯视前方深度 ✅
+      - agent_0_third_rgb               # 第三视角RGB ✅ 新增
+      - agent_0_third_depth             # 第三视角深度 ✅ 新增
+      
+      # 其他传感器
+      - agent_0_pointgoal_with_gps_compass
+      - agent_0_localization_sensor
+      - agent_0_human_num_sensor
+      - agent_0_oracle_humanoid_future_trajectory
+      - agent_0_falcon_instruction
+      - agent_0_falcon_gt_action
+
+habitat_baselines:
+  rl:
+    ddppo:
+      # 使用CLIP backbone
+      backbone: resnet50_clip_attnpool
+      
+      # CLIP视觉传感器配置 ✅ 核心配置
+      clip_visual_sensors:
+        # RGB传感器列表（支持多个视角）
+        rgb_keys:
+          - overhead_front_rgb   # 俯视
+          - third_rgb            # 第三视角 ⭐ 新增
+        
+        # Depth传感器列表（支持多个视角）
+        depth_keys:
+          - overhead_front_depth # 俯视
+          - third_depth          # 第三视角 ⭐ 新增
+        
+        # 融合模式：
+        # - "average": 平均融合（推荐，内存友好）
+        # - "concat": 拼接融合（参数量大）
+        # - "attention": 注意力融合（效果最好但计算量大）
+        fusion_mode: "average"
+        
+        # 融合前归一化（推荐开启）
+        normalize_before_fusion: True
+
+# ========================================
+# 使用方法：
+# 1. 将上述配置复制到你的训练配置文件（如 dynamic_vlnce_hm3d_train_v1.yaml）
+# 2. 确保第三视角传感器已在 defaults 中配置（如 third_rgb_sensor）
+# 3. 运行训练脚本
+# 4. 检查日志确认配置生效：
+#    [ResNetCLIPTextEncoder] 配置的RGB传感器: ['agent_0_overhead_front_rgb', 'agent_0_third_rgb']
+#    [ResNetCLIPTextEncoder] 配置的Depth传感器: ['agent_0_overhead_front_depth', 'agent_0_third_depth']
+# ========================================
