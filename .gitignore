@@ -1,0 +1,122 @@
+# =========================
+# Dataset / data symlinks
+# =========================
+data
+data/
+**/data
+**/data/
+**/data/**
+
+scene_datasets
+scene_datasets/
+**/scene_datasets
+**/scene_datasets/
+**/scene_datasets/**
+
+datasets
+datasets/
+**/datasets/
+**/datasets/**
+
+DPed_VLN/data
+DPed_VLN/data/
+
+# =========================
+# Pretrained models / checkpoints
+# =========================
+pretrained_model
+pretrained_model/
+**/pretrained_model
+**/pretrained_model/
+**/pretrained_model/**
+
+checkpoints
+checkpoints/
+**/checkpoints/
+**/checkpoints/**
+
+navila_checkpoint
+navila_checkpoint/
+**/navila_checkpoint/
+**/navila_checkpoint/**
+
+Long-CLIP/checkpoints/
+Long-CLIP/checkpoints/**
+
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.bin
+
+# =========================
+# Logs / outputs / evaluation
+# =========================
+slurm_logs
+slurm_logs/
+**/slurm_logs/
+**/slurm_logs/**
+
+outputs
+outputs/
+**/outputs/
+**/outputs/**
+
+eval_out
+eval_out/
+**/eval_out/
+**/eval_out/**
+
+evaluation
+evaluation/
+*evaluation*
+**/*evaluation*/
+**/*evaluation*/**
+
+ped_detection_results
+ped_detection_results/
+**/ped_detection_results/
+**/ped_detection_results/**
+
+brain_records*
+**/brain_records*/
+**/brain_records*/**
+
+dataset_analysis*
+**/dataset_analysis*/
+**/dataset_analysis*/**
+
+# =========================
+# Large generated files
+# =========================
+*.log
+train.log
+*.mp4
+*.avi
+*.mov
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.gz
+*.json.gz
+*.whl
+
+# =========================
+# Python / cache
+# =========================
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# =========================
+# System / editor
+# =========================
+.DS_Store
+.vscode/
+.idea/
