@@ -25,3 +25,7 @@ from .streamvln_policy import (  # noqa: F401.
     StreamVLNPolicy,
     StreamVLNNet,
 )
+from .navid_policy import (  # noqa: F401.
+    NaVidPolicy,
+    NaVidNet,
+)

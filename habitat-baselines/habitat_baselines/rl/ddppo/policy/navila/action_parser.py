@@ -189,10 +189,10 @@ class NaVILAActionParser:
     def _extract_right_angle(self, instruction: str) -> int:
         """
         从指令中提取右转角度
-        
+
         Args:
             instruction: 语言指令
-            
+
         Returns:
             degree (default 15)
         """
@@ -208,3 +208,103 @@ class NaVILAActionParser:
         except:
             pass
         return self.turn_step  # 默认15度
+
+    # ── Multi-action sequence parsing ──
+
+    # Sub-actions that can appear in a sequence (simpler than full NL)
+    _ACTION_TEXT_TO_ID = {
+        "move forward 25 cm": 1,
+        "move forward": 1,
+        "forward": 1,
+        "turn left 15 degrees": 2,
+        "turn left": 2,
+        "left": 2,
+        "turn right 15 degrees": 3,
+        "turn right": 3,
+        "right": 3,
+        "stop": 0,
+        "wait": -1,  # special: skip but don't count as action
+        "pause": -1,
+        "move backward 25 cm": -2,
+        "move backward": -2,
+        "backward": -2,
+    }
+
+    def parse_action_sequence(self, text: str) -> list:
+        """Parse a multi-action sequence string into a list of discrete action IDs.
+
+        Accepts formats like:
+          - "move forward 25 cm; turn left 15 degrees; stop"
+          - "1. move forward 25 cm\n2. turn left 15 degrees\n3. stop"
+          - Mixed formats
+
+        Returns:
+            list[int]: action IDs, e.g. [1, 2, 0] for forward, left, stop.
+            Empty list if nothing can be parsed.
+        """
+        if not text or not isinstance(text, str):
+            return []
+
+        # Step 1: Normalize: split on newlines, strip numbering, then split on "; "
+        text = text.strip()
+        candidates = []
+
+        # Try numbered list format first: "1. move forward\n2. turn left"
+        if re.match(r'^\d+[\.\)]\s', text):
+            # Split on numbered markers
+            parts = re.split(r'\n\s*\d+[\.\)]\s*|\n', text)
+            for p in parts:
+                p = re.sub(r'^\d+[\.\)]\s*', '', p).strip()
+                if p:
+                    candidates.append(p)
+        else:
+            # Semicolon-separated format
+            for part in text.split(';'):
+                part = part.strip().strip('"').strip("'")
+                if part:
+                    candidates.append(part)
+
+        if not candidates:
+            return []
+
+        # Step 2: Parse each action text
+        actions = []
+        for action_text in candidates:
+            action_text = action_text.strip().lower()
+            action_id = self._match_action_text(action_text)
+            if action_id is not None and action_id >= 0:
+                actions.append(action_id)
+            elif action_id == -1:
+                # wait/pause: skip
+                continue
+            elif action_id == -2:
+                # backward: not supported as discrete action, skip
+                continue
+            # else fallback: try the single-action parser
+            elif len(action_text) > 3:
+                parsed_id, _ = self.parse_action(action_text)
+                if parsed_id is not None:
+                    actions.append(parsed_id)
+
+        return actions
+
+    def _match_action_text(self, text: str):
+        """Match a short action text to its ID. Returns None if no match."""
+        text = text.strip().lower()
+        # Exact match first
+        if text in self._ACTION_TEXT_TO_ID:
+            return self._ACTION_TEXT_TO_ID[text]
+        # Partial match
+        for key, val in self._ACTION_TEXT_TO_ID.items():
+            if key in text:
+                return val
+        # Regex match for simple patterns
+        if re.search(r'\b(?:move\s+)?forward\b', text, re.IGNORECASE):
+            return 1
+        if re.search(r'\bturn\s+left\b', text, re.IGNORECASE):
+            return 2
+        if re.search(r'\bturn\s+right\b', text, re.IGNORECASE):
+            return 3
+        if re.search(r'\bstop\b', text, re.IGNORECASE):
+            return 0
+        return None

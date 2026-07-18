@@ -1563,16 +1563,40 @@ class DynamicVLNTrainer(BaseRLTrainer):
                 self._training_log(writer, losses, prev_time)
 
                 # 6.10 保存检查点
-                if rank0_only() and self.should_checkpoint():
-                    self.save_checkpoint(
-                        f"ckpt.{count_checkpoints}.pth",
-                        dict(
-                            step=self.num_steps_done,
-                            wall_time=(time.time() - self.t_start) + prev_time,
-                        ),
+                _sc_debug = (
+                    rank0_only()
+                    and self.should_checkpoint()
+                )
+                if rank0_only() and (self.num_updates_done <= 3 or self.num_updates_done % 10 == 0):
+                    print(
+                        f"[CKPT-DEBUG] update={self.num_updates_done} "
+                        f"should_checkpoint={self.should_checkpoint()} "
+                        f"rank0_only={rank0_only()} "
+                        f"interval={self.config.habitat_baselines.checkpoint_interval} "
+                        f"num_checkpoints_cfg={self.config.habitat_baselines.num_checkpoints}",
+                        flush=True,
                     )
-                    print(f'PPO save to ckpt.{count_checkpoints}.pth ')
-                    count_checkpoints += 1
+                if rank0_only() and self.should_checkpoint():
+                    try:
+                        self.save_checkpoint(
+                            f"ckpt.{count_checkpoints}.pth",
+                            dict(
+                                step=self.num_steps_done,
+                                wall_time=(time.time() - self.t_start) + prev_time,
+                            ),
+                        )
+                        print(f'PPO save to ckpt.{count_checkpoints}.pth ', flush=True)
+                        count_checkpoints += 1
+                    except Exception as _ckpt_err:
+                        import traceback
+                        print(
+                            f"[CKPT-ERROR] update={self.num_updates_done} "
+                            f"count_checkpoints={count_checkpoints} "
+                            f"failed: {type(_ckpt_err).__name__}: {_ckpt_err}",
+                            flush=True,
+                        )
+                        traceback.print_exc()
+                        print("[CKPT-ERROR] ckpt dump above ^^^", flush=True)
 
                 # 结束性能分析
                 profiling_wrapper.range_pop()  # train update

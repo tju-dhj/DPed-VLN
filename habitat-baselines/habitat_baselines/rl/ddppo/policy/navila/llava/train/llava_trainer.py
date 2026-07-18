@@ -28,11 +28,21 @@ from torch import nn
 from torch.utils.data import ConcatDataset, Dataset, DistributedSampler, RandomSampler, Sampler
 from transformers import PreTrainedModel, Trainer
 from transformers.modeling_utils import unwrap_model
-from transformers.trainer import ALL_LAYERNORM_LAYERS  # ShardedDDPOption,
+try:
+    from transformers.trainer import ALL_LAYERNORM_LAYERS
+except ImportError:
+    import torch.nn as nn
+    ALL_LAYERNORM_LAYERS = [nn.LayerNorm]
 from transformers.trainer import get_parameter_names, has_length, is_sagemaker_mp_enabled, logger
 
 from ..train.sequence_parallel import get_pg_manager
-from ...trl.trainer import DPOTrainer
+
+try:
+    from ..trl.trainer import DPOTrainer as _DPOTrainer
+    _DPO_AVAILABLE = True
+except (ImportError, ModuleNotFoundError):
+    _DPOTrainer = None
+    _DPO_AVAILABLE = False
 
 
 def maybe_zero_3(param, ignore_status=False, name=None):
@@ -432,8 +442,8 @@ class LengthGroupedSampler(Sampler):
         return iter(indices)
 
 
-class VILADPOTrainer(DPOTrainer):
-    def _get_train_sampler(self) -> Optional[torch.utils.data.Sampler]:
+class VILADPOTrainer(_DPOTrainer if _DPO_AVAILABLE else object):
+    def _get_train_sampler(self, dataset=None) -> Optional[torch.utils.data.Sampler]:
         if self.train_dataset is None or not has_length(self.train_dataset):
             return None
 
@@ -580,7 +590,7 @@ class VILADPOTrainer(DPOTrainer):
 
 
 class LLaVATrainer(Trainer):
-    def _get_train_sampler(self) -> Optional[torch.utils.data.Sampler]:
+    def _get_train_sampler(self, dataset=None) -> Optional[torch.utils.data.Sampler]:
         if self.train_dataset is None or not has_length(self.train_dataset):
             return None
 
@@ -765,7 +775,7 @@ class LLaVATrainer(Trainer):
         if self.args.should_save:
             return self.model.save_pretrained(output_dir, state_dict=state_dict)
 
-    def log(self, logs: Dict[str, float]) -> None:
+    def log(self, logs: Dict[str, float], start_time: Optional[float] = None, num_items_in_batch: Optional[int] = None) -> None:
         """
         Log `logs` on the various objects watching training.
 
@@ -784,9 +794,8 @@ class LLaVATrainer(Trainer):
         self.state.log_history.append(output)
 
         if self.args.debug_e2e and self.control.should_training_stop:
-
-            # Only save log history if the current process is rank 0
-            if dist.get_rank() == 0:
+            _rank = dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
+            if _rank == 0:
                 with open(f"{self.args.output_dir}/log_history.json", "w") as f:
                     json.dump(self.state.log_history, f, indent=4)
 

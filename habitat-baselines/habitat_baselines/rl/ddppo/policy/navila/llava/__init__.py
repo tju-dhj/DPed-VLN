@@ -1,2 +1,1 @@
-from .entry import *
-from .media import *
+# Minimal init to avoid heavy import chain

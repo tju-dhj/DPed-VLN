@@ -1,3 +1,4 @@
+from __future__ import annotations
 # Copyright 2024 NVIDIA CORPORATION & AFFILIATES
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,7 +19,7 @@
 import os
 from unittest import mock
 
-from ..train.sequence_parallel.monkey_patch import (
+from llava.train.sequence_parallel.monkey_patch import (
     __init__,
     _flash_attention_forward,
     _upad_input,
@@ -27,8 +28,8 @@ from ..train.sequence_parallel.monkey_patch import (
     new_decoder_forward,
     new_llamamodel_forward,
 )
-from ..train.train import train
-from ..train.transformer_normalize_monkey_patch import patched_normalize
+from llava.train.train import train
+from llava.train.transformer_normalize_monkey_patch import patched_normalize
 
 # from llava.train.sequence_parallel.grad_ckpt import unsloth_gradient_checkpointing_enable
 

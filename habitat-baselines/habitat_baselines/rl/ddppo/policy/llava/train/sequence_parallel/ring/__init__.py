@@ -1,3 +1,4 @@
+from __future__ import annotations
 # Adopted from https://github.com/zhuzilin/ring-flash-attention.
 # Implementation refers to Ring Attention Paper: https://arxiv.org/abs/2310.01889
 

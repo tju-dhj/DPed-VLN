@@ -287,6 +287,7 @@ class PolicyConfig(HabitatBaselinesBaseConfig):
     num_history: int = 8    # 保留的历史帧数（保留多轮对话机制）
     num_future_steps: int = 4  # 用于动作预测的未来步数
     model_max_length: int = 4096  # 最大序列长度
+    max_new_tokens: int = 512     # 限制生成的新token数量
     device: str = "cuda"
     # If the list is empty, all keys will be included.
     # For gaussian action distribution:

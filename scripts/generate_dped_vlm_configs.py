@@ -4,7 +4,7 @@
 import os
 
 PROJECT_ROOT = "/share/home/u19666033/dhj/DPed_pro"
-CONFIG_ROOT = os.path.join(PROJECT_ROOT, "habitat-baselines/habitat_baselines/config/DPed_vlm")
+CONFIG_ROOT = "/share/home/u19666033/dhj/dped-vln/habitat-baselines/habitat_baselines/config/DPed_vlm"
 SBATCH_ROOT = os.path.join(PROJECT_ROOT, "sbatch/DPed_vlm")
 SCENE_DIR = "/share/home/u19666033/dhj/DPed_pro/data/scene_datasets/hm3d"
 
@@ -368,7 +368,8 @@ habitat_baselines:
       max_grad_norm: 0.5
 
     direct_il:
-      data_root: "/share/home/u19666033/dhj/DPed_pro/data/collect_data/train"
+      dataset_type: "json"
+      data_root: "/share/home/u19666033/dhj/dped-vln/DPed_VLN/data_sets/{level}/train"
       max_episodes: -1
       max_episode_length: 100
       instruction_priority:
@@ -377,8 +378,8 @@ habitat_baselines:
 
 EVAL_SBATCH = """#!/bin/bash
 #SBATCH --job-name={job_name}
-#SBATCH --output=slurm_logs/dped_vlm/%j_%x.out
-#SBATCH --error=slurm_logs/dped_vlm/%j_%x.err
+#SBATCH --output=slurm_logs/dped_vlm/{log_subdir}/%j_%x.out
+#SBATCH --error=slurm_logs/dped_vlm/{log_subdir}/%j_%x.err
 #SBATCH --wckey=p19666033
 #SBATCH -A p_p19666033
 #SBATCH -p L40
@@ -404,11 +405,11 @@ set -u
 conda activate falcon
 
 unset PYTHONPATH
-export PYTHONPATH=/share/home/u19666033/dhj/DPed_pro:/share/home/u19666033/dhj/DPed_pro/habitat-lab:/share/home/u19666033/dhj/DPed_pro/habitat-baselines
+export PYTHONPATH=/share/home/u19666033/dhj/dped-vln:/share/home/u19666033/dhj/dped-vln/habitat-lab:/share/home/u19666033/dhj/dped-vln/habitat-baselines:/share/home/u19666033/dhj/DPed_pro:/share/home/u19666033/dhj/DPed_pro/habitat-lab:/share/home/u19666033/dhj/DPed_pro/habitat-baselines
 
-cd /share/home/u19666033/dhj/DPed_pro
+cd /share/home/u19666033/dhj/dped-vln
 
-mkdir -p slurm_logs/dped_vlm
+mkdir -p slurm_logs/dped_vlm/{log_subdir}
 
 echo "============================================"
 echo "  {description}"
@@ -427,8 +428,8 @@ echo "=== {description} Complete ==="
 
 TRAIN_SBATCH = """#!/bin/bash
 #SBATCH --job-name={job_name}
-#SBATCH --output=slurm_logs/dped_vlm/%j_%x.out
-#SBATCH --error=slurm_logs/dped_vlm/%j_%x.err
+#SBATCH --output=slurm_logs/dped_vlm/{log_subdir}/%j_%x.out
+#SBATCH --error=slurm_logs/dped_vlm/{log_subdir}/%j_%x.err
 #SBATCH --wckey=p19666033
 #SBATCH -A p_p19666033
 #SBATCH -p L40
@@ -454,11 +455,11 @@ set -u
 conda activate falcon
 
 unset PYTHONPATH
-export PYTHONPATH=/share/home/u19666033/dhj/DPed_pro:/share/home/u19666033/dhj/DPed_pro/habitat-lab:/share/home/u19666033/dhj/DPed_pro/habitat-baselines
+export PYTHONPATH=/share/home/u19666033/dhj/dped-vln:/share/home/u19666033/dhj/dped-vln/habitat-lab:/share/home/u19666033/dhj/dped-vln/habitat-baselines:/share/home/u19666033/dhj/DPed_pro:/share/home/u19666033/dhj/DPed_pro/habitat-lab:/share/home/u19666033/dhj/DPed_pro/habitat-baselines
 
-cd /share/home/u19666033/dhj/DPed_pro
+cd /share/home/u19666033/dhj/dped-vln
 
-mkdir -p slurm_logs/dped_vlm
+mkdir -p slurm_logs/dped_vlm/{log_subdir}
 
 echo "============================================"
 echo "  {description}"
@@ -555,7 +556,7 @@ def generate():
     sbatch_count = 0
 
     for model_name, m in models.items():
-        for mode_dir in ["zero_shot", "lora", "human_static"]:
+        for mode_dir in ["zero_shot", "zero_shot_static", "lora", "human_static"]:
             os.makedirs(os.path.join(CONFIG_ROOT, model_name, mode_dir), exist_ok=True)
 
         # ── 1. Zero-shot ──
@@ -565,7 +566,7 @@ def generate():
                 params = dict(
                     description=desc,
                     split=split,
-                    data_path=f"/share/home/u19666033/dhj/DPed_pro/dped_pro_resplit/dped-vln/{level}/{split}/{{scene}}.json.gz",
+                    data_path=f"/share/home/u19666033/dhj/dped-vln/DPed_VLN/data_sets/{level}/{split}/{{scene}}.json.gz",
                     obs_keys=m["obs_keys"],
                     human_lin_speed=HUMAN_SPEED_NORMAL,
                     human_ang_speed=HUMAN_SPEED_NORMAL,
@@ -579,6 +580,7 @@ def generate():
                     rnn_type=m["rnn_type"],
                     num_recurrent=m["num_recurrent"],
                     SCENE_DIR=SCENE_DIR,
+                level=level,
                 )
                 fpath = os.path.join(CONFIG_ROOT, model_name, "zero_shot", f"{level}_{split}.yaml")
                 with open(fpath, 'w') as f:
@@ -586,12 +588,56 @@ def generate():
                 yaml_count += 1
 
             # zero-shot eval sbatch
+            log_subdir = f"{model_name}_zero_shot_{level}"
             sbatch = EVAL_SBATCH.format(
-                job_name=f"{model_name}_zs_{level}",
+                job_name=f"{model_name[:4]}_zs_{level}",
+                log_subdir=log_subdir,
                 description=f"{model_name.upper()} Zero-Shot DPed-{level.upper()}",
                 config_prefix=f"DPed_vlm/{model_name}/zero_shot/{level}_",
             )
             spath = os.path.join(SBATCH_ROOT, f"{model_name}_zero_shot_{level}.bash")
+            with open(spath, 'w') as f:
+                f.write(sbatch)
+            os.chmod(spath, 0o755)
+            sbatch_count += 1
+
+            # ── 1b. Zero-shot human static (行人速度=0，不加微调) ──
+            for split in splits:
+                desc = f"{model_name.upper()} Zero-Shot-Static DPed-{level.upper()} {split}"
+                params = dict(
+                    description=desc,
+                    split=split,
+                    data_path=f"/share/home/u19666033/dhj/dped-vln/DPed_VLN/data_sets/{level}/{split}/{{scene}}.json.gz",
+                    obs_keys=m["obs_keys"],
+                    human_lin_speed=HUMAN_SPEED_STATIC,
+                    human_ang_speed=HUMAN_SPEED_STATIC,
+                    tb_dir=f"evaluation-vln-dpedpro2/{model_name}_zero_shot_static_{level}_{split}/hm3d/tb",
+                    ckpt_dir=f"evaluation-vln-dpedpro2/{model_name}_zero_shot_static_{level}_{split}/hm3d/checkpoints",
+                    model_path=m["base_path"],
+                    evaluator_target=m["evaluator_target"],
+                    policy_section=m["policy_fn"](m["base_path"]),
+                    hidden_size=m["hidden_size"],
+                    backbone=m["backbone"],
+                    rnn_type=m["rnn_type"],
+                    num_recurrent=m["num_recurrent"],
+                    SCENE_DIR=SCENE_DIR,
+                level=level,
+                )
+                fpath = os.path.join(CONFIG_ROOT, model_name, "zero_shot_static", f"{level}_{split}.yaml")
+                os.makedirs(os.path.dirname(fpath), exist_ok=True)
+                with open(fpath, 'w') as f:
+                    f.write(EVAL_TEMPLATE.format(**params))
+                yaml_count += 1
+
+            # zero-shot static eval sbatch
+            log_subdir = f"{model_name}_zero_shot_static_{level}"
+            sbatch = EVAL_SBATCH.format(
+                job_name=f"{model_name[:4]}_zss_{level}",
+                log_subdir=log_subdir,
+                description=f"{model_name.upper()} Zero-Shot-Static DPed-{level.upper()}",
+                config_prefix=f"DPed_vlm/{model_name}/zero_shot_static/{level}_",
+            )
+            spath = os.path.join(SBATCH_ROOT, f"{model_name}_zero_shot_static_{level}.bash")
             with open(spath, 'w') as f:
                 f.write(sbatch)
             os.chmod(spath, 0o755)
@@ -604,19 +650,21 @@ def generate():
             # Train config
             params_train = dict(
                 description=f"{model_name.upper()} LoRA Train DPed-{level.upper()}",
-                data_path=f"/share/home/u19666033/dhj/DPed_pro/dped_pro_resplit/dped-vln/{level}/train/{{scene}}.json.gz",
+                data_path=f"/share/home/u19666033/dhj/dped-vln/DPed_VLN/data_sets/{level}/train/{{scene}}.json.gz",
                 human_lin_speed=HUMAN_SPEED_NORMAL,
                 human_ang_speed=HUMAN_SPEED_NORMAL,
                 tb_dir=f"evaluation-vln-dpedpro2/{model_name}_lora_train_{level}/hm3d/tb",
                 ckpt_dir=f"evaluation-vln-dpedpro2/{model_name}_lora_train_{level}/hm3d/checkpoints",
                 log_file=f"evaluation-vln-dpedpro2/{model_name}_lora_train_{level}/hm3d/train.log",
                 log_dir=f"evaluation-vln-dpedpro2/{model_name}_lora_train_{level}/hm3d/logs",
+                log_subdir=f"{model_name}_lora_{level}",
                 policy_section=m["policy_fn"](m["base_path"]),
                 hidden_size=m["hidden_size"],
                 backbone=m["backbone"],
                 rnn_type=m["rnn_type"],
                 num_recurrent=m["num_recurrent"],
                 SCENE_DIR=SCENE_DIR,
+                level=level,
             )
             fpath = os.path.join(CONFIG_ROOT, model_name, "lora", f"{level}_train.yaml")
             with open(fpath, 'w') as f:
@@ -629,7 +677,7 @@ def generate():
                 params = dict(
                     description=desc,
                     split=split,
-                    data_path=f"/share/home/u19666033/dhj/DPed_pro/dped_pro_resplit/dped-vln/{level}/{split}/{{scene}}.json.gz",
+                    data_path=f"/share/home/u19666033/dhj/dped-vln/DPed_VLN/data_sets/{level}/{split}/{{scene}}.json.gz",
                     obs_keys=m["obs_keys"],
                     human_lin_speed=HUMAN_SPEED_NORMAL,
                     human_ang_speed=HUMAN_SPEED_NORMAL,
@@ -643,6 +691,7 @@ def generate():
                     rnn_type=m["rnn_type"],
                     num_recurrent=m["num_recurrent"],
                     SCENE_DIR=SCENE_DIR,
+                level=level,
                 )
                 fpath = os.path.join(CONFIG_ROOT, model_name, "lora", f"{level}_{split}.yaml")
                 with open(fpath, 'w') as f:
@@ -650,8 +699,10 @@ def generate():
                 yaml_count += 1
 
             # LoRA train sbatch
+            log_subdir = f"{model_name}_lora_{level}"
             sbatch = TRAIN_SBATCH.format(
-                job_name=f"{model_name}_lora_{level}_t",
+                job_name=f"{model_name[:4]}_lora_{level}_t",
+                log_subdir=f"{model_name}_lora_{level}",
                 description=f"{model_name.upper()} LoRA Train DPed-{level.upper()}",
                 config_name=f"DPed_vlm/{model_name}/lora/{level}_train.yaml",
             )
@@ -662,8 +713,10 @@ def generate():
             sbatch_count += 1
 
             # LoRA eval sbatch
+            log_subdir = f"{model_name}_lora_{level}"
             sbatch = EVAL_SBATCH.format(
-                job_name=f"{model_name}_lora_{level}_e",
+                job_name=f"{model_name[:4]}_lora_{level}_e",
+                log_subdir=f"{model_name}_lora_{level}",
                 description=f"{model_name.upper()} LoRA Eval DPed-{level.upper()}",
                 config_prefix=f"DPed_vlm/{model_name}/lora/{level}_",
             )
@@ -679,19 +732,21 @@ def generate():
             # Train config (human velocity = 0)
             params_train_static = dict(
                 description=f"{model_name.upper()} Human-Static LoRA Train DPed-{level.upper()}",
-                data_path=f"/share/home/u19666033/dhj/DPed_pro/dped_pro_resplit/dped-vln/{level}/train/{{scene}}.json.gz",
+                data_path=f"/share/home/u19666033/dhj/dped-vln/DPed_VLN/data_sets/{level}/train/{{scene}}.json.gz",
                 human_lin_speed=HUMAN_SPEED_STATIC,
                 human_ang_speed=HUMAN_SPEED_STATIC,
                 tb_dir=f"evaluation-vln-dpedpro2/{model_name}_human_static_train_{level}/hm3d/tb",
                 ckpt_dir=f"evaluation-vln-dpedpro2/{model_name}_human_static_train_{level}/hm3d/checkpoints",
                 log_file=f"evaluation-vln-dpedpro2/{model_name}_human_static_train_{level}/hm3d/train.log",
                 log_dir=f"evaluation-vln-dpedpro2/{model_name}_human_static_train_{level}/hm3d/logs",
+                log_subdir=f"{model_name}_human_static_{level}",
                 policy_section=m["policy_fn"](m["base_path"]),
                 hidden_size=m["hidden_size"],
                 backbone=m["backbone"],
                 rnn_type=m["rnn_type"],
                 num_recurrent=m["num_recurrent"],
                 SCENE_DIR=SCENE_DIR,
+                level=level,
             )
             fpath = os.path.join(CONFIG_ROOT, model_name, "human_static", f"{level}_train.yaml")
             with open(fpath, 'w') as f:
@@ -704,7 +759,7 @@ def generate():
                 params = dict(
                     description=desc,
                     split=split,
-                    data_path=f"/share/home/u19666033/dhj/DPed_pro/dped_pro_resplit/dped-vln/{level}/{split}/{{scene}}.json.gz",
+                    data_path=f"/share/home/u19666033/dhj/dped-vln/DPed_VLN/data_sets/{level}/{split}/{{scene}}.json.gz",
                     obs_keys=m["obs_keys"],
                     human_lin_speed=HUMAN_SPEED_STATIC,
                     human_ang_speed=HUMAN_SPEED_STATIC,
@@ -718,6 +773,7 @@ def generate():
                     rnn_type=m["rnn_type"],
                     num_recurrent=m["num_recurrent"],
                     SCENE_DIR=SCENE_DIR,
+                level=level,
                 )
                 fpath = os.path.join(CONFIG_ROOT, model_name, "human_static", f"{level}_{split}.yaml")
                 with open(fpath, 'w') as f:
@@ -725,8 +781,10 @@ def generate():
                 yaml_count += 1
 
             # Human static train sbatch
+            log_subdir = f"{model_name}_human_static_{level}"
             sbatch = TRAIN_SBATCH.format(
-                job_name=f"{model_name}_stat_{level}_t",
+                job_name=f"{model_name[:4]}_stat_{level}_t",
+                log_subdir=f"{model_name}_human_static_{level}",
                 description=f"{model_name.upper()} Human-Static Train DPed-{level.upper()}",
                 config_name=f"DPed_vlm/{model_name}/human_static/{level}_train.yaml",
             )
@@ -737,8 +795,10 @@ def generate():
             sbatch_count += 1
 
             # Human static eval sbatch
+            log_subdir = f"{model_name}_human_static_{level}"
             sbatch = EVAL_SBATCH.format(
-                job_name=f"{model_name}_stat_{level}_e",
+                job_name=f"{model_name[:4]}_stat_{level}_e",
+                log_subdir=f"{model_name}_human_static_{level}",
                 description=f"{model_name.upper()} Human-Static Eval DPed-{level.upper()}",
                 config_prefix=f"DPed_vlm/{model_name}/human_static/{level}_",
             )

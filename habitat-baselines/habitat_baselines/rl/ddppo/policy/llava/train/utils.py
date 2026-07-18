@@ -1,3 +1,4 @@
+from __future__ import annotations
 # Copyright 2024 NVIDIA CORPORATION & AFFILIATES
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,7 +21,6 @@ import pathlib
 import re
 import warnings
 from dataclasses import dataclass
-from typing import Optional
 
 import torch
 import torch.distributed as dist
@@ -28,7 +28,7 @@ from accelerate.hooks import add_hook_to_module
 from transformers import PretrainedConfig, PreTrainedModel
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 
-from ..train.sequence_parallel.globals import get_pg_manager, get_ulysses_sp_pg
+from llava.train.sequence_parallel.globals import get_pg_manager, get_ulysses_sp_pg
 
 
 def rprint(*args, **kwargs):
@@ -56,9 +56,7 @@ def is_local(model_name_or_path: str) -> bool:
     return os.path.isdir(model_name_or_path)
 
 
-def get_checkpoint_path(
-    output_dir: str, checkpoint_prefix: str = "checkpoint"
-) -> tuple[Optional[str], bool]:
+def get_checkpoint_path(output_dir: str, checkpoint_prefix: str = "checkpoint") -> str | None:
     output_dir = os.path.abspath(output_dir)
     pathlib_dir = pathlib.Path(output_dir)
 
@@ -162,9 +160,12 @@ def calculate_loss_weight(labels, ignore_index=-100):
 
     padding_mask = shift_labels.eq(ignore_index)  # IGNORE_INDEX = -100 by default
     num_active_elements = padding_mask.numel() - padding_mask.long().sum()
-    global_active_sum = copy.deepcopy(num_active_elements)
-    dist.all_reduce(global_active_sum)
-    loss_weight = num_active_elements / global_active_sum * dist.get_world_size()
+    if dist.is_initialized():
+        global_active_sum = copy.deepcopy(num_active_elements)
+        dist.all_reduce(global_active_sum)
+        loss_weight = num_active_elements / global_active_sum * dist.get_world_size()
+    else:
+        loss_weight = torch.tensor(1.0, device=labels.device)
     # print("num_active_elements", num_active_elements.item(), "padding_mask.numel()", padding_mask.numel(), "padding_mask.long().sum()", padding_mask.long().sum().item())
     return loss_weight
 
@@ -174,7 +175,7 @@ def reshard_hiddne_states_and_labels(hidden_states, labels):
     sp_degree = PROCESS_GROUP_MANAGER.sp_degree
     sp_rank = PROCESS_GROUP_MANAGER.sp_rank
     sp_group = PROCESS_GROUP_MANAGER.ulysses_pg
-    from ..constants import IGNORE_INDEX
+    from llava.constants import IGNORE_INDEX
 
     # Get the seq len on different sp ranks
     bs, shard_seqlen = labels.shape
@@ -246,7 +247,7 @@ def reshard_hiddne_states_and_labels(hidden_states, labels):
 
 
 def sp_loss_rescale(shift_labels, loss):
-    from ..constants import IGNORE_INDEX
+    from llava.constants import IGNORE_INDEX
 
     PROCESS_GROUP_MANAGER = get_pg_manager()
     labels_mask = shift_labels.ne(IGNORE_INDEX)  # IGNORE_INDEX = -100 by default

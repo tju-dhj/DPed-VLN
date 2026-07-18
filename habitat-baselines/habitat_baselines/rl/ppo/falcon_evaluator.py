@@ -281,11 +281,14 @@ class FALCONEvaluator(Evaluator):
         stats_report_interval = 50  # 每50个episodes输出一次平均评估结果
         
         # checkpoint保存间隔：每N个episodes保存一次
-        checkpoint_save_interval = 10  # 每10个episodes保存一次checkpoint
+        checkpoint_save_interval = 50  # 增加到50个episodes保存一次checkpoint，减少IO
         episodes_since_last_save = 0
         
         # 记录哪些env当前正在运行已完成的episode（需要快速跳过）
         envs_skipping = set()
+        
+        # 每个env的episode步数计数器
+        episode_steps = [0] * envs.num_envs
 
         while (
             len(stats_episodes) < (number_of_eval_episodes * evals_per_ep)
@@ -361,6 +364,10 @@ class FALCONEvaluator(Evaluator):
 
             outputs = envs.step(step_data)
 
+            # 增加每个env的步数计数器
+            for i in range(envs.num_envs):
+                episode_steps[i] += 1
+
             observations, rewards_l, dones, infos = [
                 list(x) for x in zip(*outputs)
             ]
@@ -374,17 +381,14 @@ class FALCONEvaluator(Evaluator):
                     ]
                 )
 
+                # 简化存储：直接存数值或转int，避免重复的tolist()调用
                 action_value = step_data[i]
                 if isinstance(action_value, np.ndarray):
-                    stored_action = {
-                        "type": "array",
-                        "value": action_value.tolist()
-                    }
+                    stored_action = action_value.tolist()
+                elif hasattr(action_value, 'item'):
+                    stored_action = int(action_value.item())
                 else:
-                    stored_action = {
-                        "type": "array",
-                        "value": np.array(action_value).tolist()
-                    }
+                    stored_action = int(action_value) if isinstance(action_value, (np.int32, np.int64)) else action_value
 
                 actions_record[episode_key].append(stored_action)
 
@@ -489,9 +493,19 @@ class FALCONEvaluator(Evaluator):
 
                     if "success" in disp_info:
                         success_cal += disp_info['success']
-                        print(f"Till now Success Rate: {success_cal/completed_episodes_count}")
+                        # 只每50个episode输出一次成功率，减少IO
+                        if completed_episodes_count % stats_report_interval == 0:
+                            print(f"Till now Success Rate: {success_cal/completed_episodes_count}")
+                    
+                    # 输出该episode的步数（但减少输出频率，只每50个episode输出一次详细统计）
+                    ep_steps = episode_steps[i]
+                    
+                    # 重置该env的步数计数器
+                    episode_steps[i] = 0
+                    
                     episode_stats = {
-                        "reward": current_episode_reward[i].item()
+                        "reward": current_episode_reward[i].item(),
+                        "steps": ep_steps  # 记录该episode的步数
                     }
                     episode_stats.update(extract_scalars_from_info(infos[i]))
                     current_episode_reward[i] = 0

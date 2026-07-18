@@ -13,7 +13,7 @@
 #   --dataset=NAME           数据集 split 名字
 #   --timeout=SEC            单 ckpt 超时
 
-cd /share/home/u19666033/dhj/DPed_pro
+cd /share/home/u19666033/dhj/dped-vln
 
 START_ARG=""
 END_ARG=""
@@ -21,7 +21,7 @@ DRY_RUN=""
 OVERWRITE=""
 CKPT_DIR_ARG=""
 OUTPUT_BASE_ARG=""
-CONFIG_ARG="--config-name=DPed_pro/new_data/eval/dped_eval_4a_start_eval_fast.yaml"
+CONFIG_ARG="--config-name=DPed_VLN/eval/eval_rl_v1_eval_fast.yaml"
 DATASET_ARG="--dataset=val_evalfast"
 TIMEOUT_ARG="--timeout=7200"
 

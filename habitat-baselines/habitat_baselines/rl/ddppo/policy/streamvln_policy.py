@@ -1171,7 +1171,12 @@ class StreamVLNNet(Net):
         for key in observations.keys():
             if "agent_0" in key and "rgb" in key.lower():
                 return key
-        
+
+        # DirectIL dataset: keys without agent_0_ prefix (e.g., overhead_front_rgb)
+        for key in observations.keys():
+            if "rgb" in key.lower():
+                return key
+
         return None
 
     def _find_depth_key(self, observations: Dict[str, torch.Tensor]) -> Optional[str]:
@@ -1208,7 +1213,12 @@ class StreamVLNNet(Net):
         for key in observations.keys():
             if "agent_0" in key and "depth" in key.lower():
                 return key
-        
+
+        # DirectIL dataset: keys without agent_0_ prefix (e.g., overhead_front_depth)
+        for key in observations.keys():
+            if "depth" in key.lower():
+                return key
+
         return None
 
     def _tensor_like_to_numpy(self, data: Any) -> Optional[np.ndarray]:
@@ -1813,6 +1823,14 @@ class StreamVLNNet(Net):
             fused_features = torch.cat(x, dim=1)
         else:
             fused_features = features
+
+        # Project fused features to hidden_size if needed (for action head compatibility)
+        if fused_features.shape[-1] != self._hidden_size:
+            if not hasattr(self, 'output_projection'):
+                self.output_projection = nn.Linear(
+                    fused_features.shape[-1], self._hidden_size
+                ).to(fused_features.device)
+            fused_features = self.output_projection(fused_features)
         
         # Prepare auxiliary loss state with both perception and RNN outputs
         # perception_embed: raw visual features (before fusion)

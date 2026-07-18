@@ -1,3 +1,4 @@
+from __future__ import annotations
 # Adopted from https://github.com/lm-sys/FastChat. Below is the original copyright:
 # Adopted from tatsu-lab@stanford_alpaca. Below is the original copyright:
 #    Copyright 2023 Rohan Taori, Ishaan Gulrajani, Tianyi Zhang, Yann Dubois, Xuechen Li
@@ -29,29 +30,29 @@ from transformers.modeling_utils import unwrap_model
 
 import llava.data.dataset as dataset
 import llava.data.datasets_mixture as datasets_mixture
-from . import conversation as conversation_lib
-from .constants import (
+from llava import conversation as conversation_lib
+from llava.constants import (
     DEFAULT_IM_END_TOKEN,
     DEFAULT_IM_START_TOKEN,
     DEFAULT_IMAGE_TOKEN,
     IGNORE_INDEX,
     IMAGE_TOKEN_INDEX,
 )
-from .data import make_supervised_data_module
-from .mm_utils import process_image
-from .model import *
-from .train.args import DataArguments, ModelArguments, TrainingArguments
-from .train.callbacks.autoresume_callback import AutoResumeCallback
-from .train.llava_trainer import LLaVATrainer, VILADPOTrainer
-from ..train.sequence_parallel import set_pg_manager
-from ..train.utils import (
+from llava.data import make_supervised_data_module
+from llava.mm_utils import process_image
+from llava.model import *
+from llava.train.args import DataArguments, ModelArguments, TrainingArguments
+from llava.train.callbacks.autoresume_callback import AutoResumeCallback
+from llava.train.llava_trainer import LLaVATrainer, VILADPOTrainer
+from llava.train.sequence_parallel import set_pg_manager
+from llava.train.utils import (
     get_checkpoint_path,
     mprint,
     prepare_config_for_training,
     unit_test_rope_scaling,
     vision_resolution_elevation,
 )
-from ..trl.trainer.utils import DPODataCollatorWithPadding
+from llava.trl.trainer.utils import DPODataCollatorWithPadding
 
 local_rank = None
 
@@ -549,9 +550,9 @@ def train():
 
     if training_args.lora_enable:
         from peft import LoraConfig, PeftModel, get_peft_model
+        import peft as _peft
 
-        lora_config = LoraConfig(
-            use_dora=training_args.use_dora,
+        lora_kwargs = dict(
             r=training_args.lora_r,
             lora_alpha=training_args.lora_alpha,
             target_modules=find_all_linear_names(model, training_args.lora_llm, training_args.lora_vt),
@@ -559,6 +560,11 @@ def train():
             bias=training_args.lora_bias,
             task_type="CAUSAL_LM",
         )
+        # use_dora added in peft 0.6+
+        _peft_version = tuple(int(x) for x in _peft.__version__.split(".")[:2])
+        if _peft_version >= (0, 6):
+            lora_kwargs["use_dora"] = training_args.use_dora
+        lora_config = LoraConfig(**lora_kwargs)
         if training_args.bits == 16:
             if training_args.bf16:
                 model.to(torch.bfloat16)
@@ -588,24 +594,39 @@ def train():
         mprint(model)
         model.print_trainable_parameters()
 
+        # --- LoRA Debug (same as StreamVLN fix) ---
+        import peft as _peft_module
+        mprint(f"[LoRA-Debug] model type: {type(model).__name__}")
+        mprint(f"[LoRA-Debug] is PeftModel: {isinstance(model, _peft_module.PeftModel)}")
+        trainable_count = sum(1 for _, p in model.named_parameters() if p.requires_grad)
+        mprint(f"[LoRA-Debug] trainable param count: {trainable_count}")
+        lora_count = sum(1 for n, _ in model.named_parameters() if 'lora_' in n.lower())
+        lora_grad = sum(1 for n, p in model.named_parameters() if 'lora_' in n.lower() and p.requires_grad)
+        mprint(f"[LoRA-Debug] LoRA params: {lora_count}, with requires_grad=True: {lora_grad}")
+        if lora_count == 0:
+            raise RuntimeError("[LoRA-Debug] ZERO LoRA params found! PEFT LoRA NOT applied.")
+        if lora_grad == 0:
+            raise RuntimeError("[LoRA-Debug] All LoRA params have requires_grad=False!")
+        mprint("[LoRA-Debug] LoRA verification PASSED")
+        # --- End LoRA Debug ---
+
     # currently assume fft for mm projector
+    # CRITICAL FIX: When LoRA is enabled, PEFT manages trainable params.
+    # Do NOT override requires_grad with tune_language_model etc.
     if training_args.lora_enable:
+        mprint("[LoRA-Fix] LoRA mode: PEFT manages trainable params, skipping requires_grad overrides")
         if not training_args.lora_llm:
-            model.get_llm().requires_grad_(training_args.tune_language_model)
+            # Only freeze LLM if explicitly NOT tuning it AND not using LoRA
+            pass  # PEFT already handles this
         if model.get_vision_tower():
             if training_args.lora_vt:
-
                 def make_inputs_require_grad(module, input, output):
                     output.requires_grad_(True)
-
                 model.get_vision_tower().vision_tower.get_input_embeddings().register_forward_hook(
                     make_inputs_require_grad
                 )
-            elif training_args.tune_vision_tower:
-                model.get_vision_tower().requires_grad_(training_args.tune_vision_tower)
-            model.get_mm_projector().requires_grad_(training_args.tune_mm_projector)
-            mprint(f"mm projector {training_args.tune_mm_projector}")
-            model.print_trainable_parameters()
+            # Skip the else branch - PEFT handles it
+        model.print_trainable_parameters()
     else:
         model.get_llm().requires_grad_(training_args.tune_language_model)
         mprint(f"Tunable parameters:\nlanguage model {training_args.tune_language_model}")
@@ -743,7 +764,43 @@ def train():
             data_collator=data_collator,
         )
     else:
-        trainer = LLaVATrainer(model=model, tokenizer=tokenizer, args=training_args, callbacks=callbacks, **data_module)
+        # --- LoRA-Safe Trainer wrapper (same as StreamVLN fix) ---
+        if training_args.lora_enable:
+            import peft as _peft_module
+            import torch.nn.functional as F
+
+            class LoRASafeLLaVATrainer(LLaVATrainer):
+                def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+                    mprint(f"[LoRA-Trainer] compute_loss: model={type(model).__name__}, isPeft={isinstance(model, _peft_module.PeftModel)}")
+                    outputs = model(**inputs)
+                    loss = None
+                    logits = None
+                    if hasattr(outputs, "loss"):
+                        loss = outputs.loss
+                    elif isinstance(outputs, dict) and "loss" in outputs:
+                        loss = outputs["loss"]
+                    if hasattr(outputs, "logits"):
+                        logits = outputs.logits
+                    elif isinstance(outputs, dict) and "logits" in outputs:
+                        logits = outputs["logits"]
+                    mprint(f"[LoRA-Trainer] loss.requires_grad={loss.requires_grad if loss is not None else 'N/A'}, grad_fn={loss.grad_fn if loss is not None else 'N/A'}")
+                    if logits is not None:
+                        mprint(f"[LoRA-Trainer] logits.requires_grad={logits.requires_grad}")
+                    if loss is not None and not loss.requires_grad and logits is not None and logits.requires_grad:
+                        mprint("[LoRA-Trainer] Recomputing loss from logits manually")
+                        shift_logits = logits[..., :-1, :].contiguous()
+                        labels = inputs.get("labels")
+                        if labels is not None:
+                            shift_labels = labels[..., 1:].contiguous()
+                            loss = F.cross_entropy(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1), ignore_index=IGNORE_INDEX)
+                    return (loss, outputs) if return_outputs else loss
+
+            trainer_cls = LoRASafeLLaVATrainer
+            mprint("[LoRA-Trainer] Using LoRASafeLLaVATrainer")
+        else:
+            trainer_cls = LLaVATrainer
+
+        trainer = trainer_cls(model=model, tokenizer=tokenizer, args=training_args, callbacks=callbacks, **data_module)
     print(
         "length of dataloader:",
         len(trainer.get_train_dataloader()),

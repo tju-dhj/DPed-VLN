@@ -28,12 +28,12 @@ import subprocess
 from pathlib import Path
 from datetime import datetime
 # CHECKPOINT_DIR="/share/home/u19666033/dhj/DPed_pro/evaluation-vln/dped_pro_social_eq/hm3d/checkpoints"
-CHECKPOINT_DIR="/share/home/u19666033/dhj/DPed_pro/evaluation-vln/dped_pro_clip_rl_v2_6actions/hm3d/checkpoints"
+CHECKPOINT_DIR="/share/home/u19666033/dhj/dped-vln/evaluation-vln/dped_pro_clip_rl_v2_6actions/hm3d/checkpoints"
 # ============== 配置区域 ==============
 # DEFAULT_CKPT_DIR = "/share/home/u19666033/dhj/DPed_pro/evaluation-vln/dped_pro_social_eq/hm3d/checkpoints"
-DEFAULT_CKPT_DIR = "/share/home/u19666033/dhj/DPed_pro/evaluation-vln/dped_pro_clip_rl_v2_6actions/hm3d/checkpoints"
-DEFAULT_OUTPUT_BASE = "/share/home/u19666033/dhj/DPed_pro/evaluation-vlnce-dpedpro2/rl/4a-base-start/hm3d/eval_fast_2"
-DEFAULT_CONFIG = "DPed_pro/new_data/eval/dped_eval_4a_start_eval_fast.yaml"
+DEFAULT_CKPT_DIR = "/share/home/u19666033/dhj/dped-vln/evaluation-vln/dped_pro_clip_rl_v2_6actions/hm3d/checkpoints"
+DEFAULT_OUTPUT_BASE = "/share/home/u19666033/dhj/dped-vln/evaluation-vlnce-dpedpro2/rl/4a-base-start/hm3d/eval_fast_2"
+DEFAULT_CONFIG = "DPed_VLN/eval/eval_rl_v1_eval_fast.yaml"
 # ======================================
 
 
@@ -154,7 +154,7 @@ def run_eval(ckpt_info, config_name, output_base, dataset, timeout):
         # 使用Popen实现流式输出，实时打印到终端
         process = subprocess.Popen(
             cmd,
-            cwd="/share/home/u19666033/dhj/DPed_pro",
+            cwd="/share/home/u19666033/dhj/dped-vln",
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,  # 合并stderr到stdout
             text=True,

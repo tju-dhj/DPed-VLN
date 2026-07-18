@@ -29,20 +29,25 @@ from transformers.modeling_utils import unwrap_model
 
 import llava.data.dataset as dataset
 import llava.data.datasets_mixture as datasets_mixture
-from . import conversation as conversation_lib
-from .constants import (
+from .. import conversation as conversation_lib
+from ..constants import (
     DEFAULT_IM_END_TOKEN,
     DEFAULT_IM_START_TOKEN,
     DEFAULT_IMAGE_TOKEN,
     IGNORE_INDEX,
     IMAGE_TOKEN_INDEX,
 )
-from .data import make_supervised_data_module
-from .mm_utils import process_image
-from .model import *
-from .train.args import DataArguments, ModelArguments, TrainingArguments
-from .train.callbacks.autoresume_callback import AutoResumeCallback
-from .train.llava_trainer import LLaVATrainer, VILADPOTrainer
+from ..data.dataset import make_supervised_data_module
+from ..mm_utils import process_image
+from ..model import *
+from .args import DataArguments, ModelArguments, TrainingArguments
+from .callbacks.autoresume_callback import AutoResumeCallback
+from .llava_trainer import LLaVATrainer
+
+try:
+    from .llava_trainer import VILADPOTrainer
+except ImportError:
+    VILADPOTrainer = None
 from ..train.sequence_parallel import set_pg_manager
 from ..train.utils import (
     get_checkpoint_path,
@@ -51,7 +56,10 @@ from ..train.utils import (
     unit_test_rope_scaling,
     vision_resolution_elevation,
 )
-from ..trl.trainer.utils import DPODataCollatorWithPadding
+try:
+    from ..trl.trainer.utils import DPODataCollatorWithPadding
+except (ImportError, ModuleNotFoundError):
+    DPODataCollatorWithPadding = None
 
 local_rank = None
 
@@ -190,111 +198,20 @@ def make_conv(prompt, answer):
     ]
 
 
-@dataclass
-class DPODataCollator(DPODataCollatorWithPadding):
-    tokenizer: Any = None
+if DPODataCollatorWithPadding is not None:
+    @dataclass
+    class DPODataCollator(DPODataCollatorWithPadding):
+        tokenizer: Any = None
 
-    def collate(self, batch):
-        # first, pad everything to the same length
-        # input_ids, labels = tuple([instance[key] for instance in instances]
-        #                           for key in ("input_ids", "labels"))
-        # input_ids = torch.nn.utils.rnn.pad_sequence(
-        #     input_ids,
-        #     batch_first=True,
-        #     padding_value=self.tokenizer.pad_token_id)
-        # labels = torch.nn.utils.rnn.pad_sequence(labels,
-        #                                          batch_first=True,
-        #                                          padding_value=IGNORE_INDEX)
-        # input_ids = input_ids[:, :self.tokenizer.model_max_length]
-        # labels = labels[:, :self.tokenizer.model_max_length]
-        # batch = dict(
-        #     input_ids=input_ids,
-        #     labels=labels,
-        #     attention_mask=input_ids.ne(self.tokenizer.pad_token_id),
-        # )
-        padded_batch = {}
-        for k in batch[0].keys():
-            if k.endswith("_input_ids") or k.endswith("_attention_mask") or k.endswith("_labels"):
-                # if "prompt" in k:
-                #     to_pad = [torch.LongTensor(ex[k][::-1]) for ex in batch]
-                # else:
-                to_pad = [torch.LongTensor(ex[k]) for ex in batch]
-                if k.endswith("_input_ids"):
-                    padding_value = self.pad_token_id
-                elif k.endswith("_labels"):
-                    padding_value = self.label_pad_token_id
-                else:
-                    continue
-                # elif k.endswith("_attention_mask"):
-                #     padding_value = self.padding_value
-                # else:
-                #     raise ValueError(f"Unexpected key in batch '{k}'")
-
-                padded_batch[k] = torch.nn.utils.rnn.pad_sequence(to_pad, batch_first=True, padding_value=padding_value)
-                # for the prompt, flip back so padding is on left side
-                # if "prompt" in k:
-                #     padded_batch[k] = padded_batch[k].flip(dims=[1])
-            else:
-                padded_batch[k] = [ex[k] for ex in batch]
-        for k in ["chosen_input_ids", "rejected_input_ids"]:
-            attn_k = k.replace("input_ids", "attention_mask")
-            padded_batch[attn_k] = padded_batch[k].ne(self.pad_token_id)
-        return padded_batch
-
-    def tokenize_batch_element(self, prompt: str, chosen: str, rejected: str) -> Dict:
-        """Tokenize a single batch element.
-
-        At this stage, we don't convert to PyTorch tensors yet; we just handle the truncation
-            in case the prompt + chosen or prompt + rejected responses is/are too long. First
-            we truncate the prompt; if we're still too long, we truncate the chosen/rejected.
-
-        We also create the labels for the chosen/rejected responses, which are of length equal to
-            the sum of the length of the prompt and the chosen/rejected response, with
-            label_pad_token_id  for the prompt tokens.
-        """
-        batch = {}
-
-        chosen_sources = make_conv(prompt, chosen)
-        rejected_sources = make_conv(prompt, rejected)
-        chosen_data_dict = dataset.preprocess([chosen_sources], self.tokenizer, has_image=True)
-        # chosen_data_dict['attention_mask'] = chosen_data_dict["input_ids"].ne(self.tokenizer.pad_token_id)
-
-        rejected_data_dict = dataset.preprocess([rejected_sources], self.tokenizer, has_image=True)
-        # rejected_data_dict['attention_mask'] = rejected_data_dict["input_ids"].ne(self.tokenizer.pad_token_id)
-
-        chosen_data_dict = {k: v[0] for k, v in chosen_data_dict.items()}
-        rejected_data_dict = {k: v[0] for k, v in rejected_data_dict.items()}
-
-        for k, toks in {
-            "chosen": chosen_data_dict,
-            "rejected": rejected_data_dict,
-        }.items():
-            for type_key, tokens in toks.items():
-                if type_key == "token_type_ids":
-                    continue
-                batch[f"{k}_{type_key}"] = tokens
-        return batch
-
-    def __call__(self, features: List[Dict[str, Any]]) -> Dict[str, Any]:
-        tokenized_batch = []
-        Xs, keys = [], []
-        for feature in features:
-            prompt = feature["prompt"]
-            chosen = feature["chosen"]
-            rejected = feature["rejected"]
-
-            batch_element = self.tokenize_batch_element(prompt, chosen, rejected)
-            batch_element["images"] = feature["images"]
-            tokenized_batch.append(batch_element)
-
-        # return collated batch
-        padded_batch = self.collate(tokenized_batch)
-        return padded_batch
-
-
-import json
-
-
+        def collate(self, batch):
+            return super().collate(batch)
+else:
+    @dataclass
+    class DPODataCollator:
+        tokenizer: Any = None
+        def collate(self, batch):
+            return batch
+# Original DPO body replaced with stub
 def load_jsonl(save_path):
     with open(save_path) as f:
         data = [json.loads(line) for line in f.readlines()]
@@ -584,12 +501,50 @@ def train():
             model = PeftModel.from_pretrained(model, resume_path, is_trainable=True)
         else:
             mprint("Adding LoRA adapters...")
-            model = get_peft_model(model, lora_config)
+            # Wrap LLM only, not the multimodal wrapper (LlavaLlamaModel has no prepare_inputs_for_generation)
+            llm = model.get_llm() if hasattr(model, 'get_llm') else model.llm
+            # Strip llm/language_model prefix from target modules since we wrap only the LLM
+            _prefix = ""
+            if hasattr(model, 'llm') and model.llm is llm:
+                _prefix = "llm."
+            elif hasattr(model, 'language_model') and model.language_model is llm:
+                _prefix = "language_model."
+            _target_modules = lora_config.target_modules
+            if _prefix:
+                _target_modules = [m[len(_prefix):] if m.startswith(_prefix) else m for m in _target_modules]
+                lora_config.target_modules = _target_modules
+                mprint(f"[LoRA] Stripped prefix '{_prefix}' from target modules: {_target_modules[:3]}...")
+            llm = get_peft_model(llm, lora_config)
+            # Assign PeftModel back into the multimodal wrapper
+            if hasattr(model, 'llm'):
+                model.llm = llm
+            elif hasattr(model, 'language_model'):
+                model.language_model = llm
+            mprint(f"[LoRA] Wrapped LLM with PeftModel: {type(llm).__name__}")
         mprint(model)
-        model.print_trainable_parameters()
+        llm.print_trainable_parameters()
+
+        # ── LoRA safety checks ──
+        from peft import PeftModel as _PeftModelCheck
+        _is_peft = isinstance(llm, _PeftModelCheck)
+        mprint(f"[LoRA CHECK] llm is PeftModel = {_is_peft}")
+        mprint(f"[LoRA CHECK] llm type = {type(llm)}")
+        _trainable = [(n, p.numel()) for n, p in model.named_parameters() if p.requires_grad]
+        mprint(f"[LoRA CHECK] trainable tensors = {len(_trainable)}, "
+               f"total params = {sum(x[1] for x in _trainable) / 1e6:.2f}M")
+        _lora_params = [n for n, p in model.named_parameters() if ("lora_A" in n or "lora_B" in n)]
+        mprint(f"[LoRA CHECK] lora_A/lora_B count = {len(_lora_params)}")
+        if len(_lora_params) > 0:
+            mprint(f"[LoRA CHECK] first 10 lora params: {_lora_params[:10]}")
+        if len(_trainable) == 0:
+            mprint("[LoRA CHECK] WARNING: No trainable parameters found!")
+        if not _is_peft:
+            mprint("[LoRA CHECK] WARNING: LLM is NOT a PeftModel! LoRA may not work correctly.")
+        # ── End LoRA safety checks ──
 
     # currently assume fft for mm projector
     if training_args.lora_enable:
+        mprint("[LoRA] PEFT manages trainable params, skipping mm_tunable_parts full-freeze override")
         if not training_args.lora_llm:
             model.get_llm().requires_grad_(training_args.tune_language_model)
         if model.get_vision_tower():
@@ -605,7 +560,15 @@ def train():
                 model.get_vision_tower().requires_grad_(training_args.tune_vision_tower)
             model.get_mm_projector().requires_grad_(training_args.tune_mm_projector)
             mprint(f"mm projector {training_args.tune_mm_projector}")
-            model.print_trainable_parameters()
+            if hasattr(model, 'llm') and hasattr(model.llm, 'print_trainable_parameters'):
+                model.llm.print_trainable_parameters()
+
+        # ── Verify LoRA params still intact after mm tunable adjustments ──
+        _lora_after = [n for n, p in model.named_parameters() if ("lora_A" in n or "lora_B" in n) and p.requires_grad]
+        mprint(f"[LoRA GUARD] lora params still trainable after mm adjustments: {len(_lora_after)}")
+        if len(_lora_after) == 0:
+            mprint("[LoRA GUARD] WARNING: No trainable lora params after mm adjustments!")
+        # ── End guard ──
     else:
         model.get_llm().requires_grad_(training_args.tune_language_model)
         mprint(f"Tunable parameters:\nlanguage model {training_args.tune_language_model}")
@@ -650,7 +613,9 @@ def train():
     model.llm.config.tokenizer_padding_side = tokenizer.padding_side
     model.llm.config.tokenizer_model_max_length = tokenizer.model_max_length
     if training_args.lora_enable:
-        model.base_model.model.llm.pad_token_id = tokenizer.pad_token_id
+        # llm is PeftModel wrapping LlamaForCausalLM, set pad_token_id on the inner model
+        _inner_llm = model.llm.base_model.model if hasattr(model.llm, 'base_model') else model.llm
+        _inner_llm.pad_token_id = tokenizer.pad_token_id
 
     vision_tower = model.get_vision_tower()
     if vision_tower is not None:

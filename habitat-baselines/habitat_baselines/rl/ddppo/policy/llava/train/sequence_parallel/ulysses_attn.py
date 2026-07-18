@@ -1,3 +1,4 @@
+from __future__ import annotations
 # Copyright (c) Microsoft Corporation.
 # SPDX-License-Identifier: Apache-2.0
 
@@ -12,7 +13,7 @@ from flash_attn import flash_attn_func
 from torch import Tensor
 from torch.nn import Module
 
-from ...train.sequence_parallel.globals import get_ulysses_seq_len, get_ulysses_sp_rank, get_ulysses_sp_size
+from llava.train.sequence_parallel.globals import get_ulysses_seq_len, get_ulysses_sp_rank, get_ulysses_sp_size
 
 from .all_to_all import SeqAllGather, SeqAllToAll4D, SeqAllToAll5D
 

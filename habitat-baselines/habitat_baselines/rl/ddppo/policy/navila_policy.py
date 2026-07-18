@@ -642,7 +642,12 @@ class NaVILAPolicy(NetPolicy):
             instruction_sensor_uuid=instruction_sensor_uuid,
             rgb_sensor_keys=rgb_sensor_keys,
         )
-        
+
+        # Multi-action sequence mode (from policy config)
+        if policy_config is not None:
+            net.action_sequence_mode = getattr(policy_config, 'action_sequence_mode', False)
+            net.action_sequence_length = getattr(policy_config, 'action_sequence_length', 4)
+
         super().__init__(
             net,
             action_space=action_space,
@@ -805,9 +810,11 @@ class NaVILANet(Net):
         rgb_sensor_keys: Optional[List[str]] = None,
     ):
         super().__init__()
-        
+
         self.num_video_frames = num_video_frames
         self.instruction_sensor_uuid = instruction_sensor_uuid
+        self.action_sequence_mode = False
+        self.action_sequence_length = 4
         self.available_rgb_keys = _augment_rgb_sensor_keys(
             [
                 key
@@ -1091,12 +1098,22 @@ class NaVILANet(Net):
         )
         # 构建提示
         interleaved_images = "<image>\n" * (len(sampled_frames) - 1)
-        question = (
-            f"Imagine you are a robot programmed for navigation tasks. You have been given a video "
-            f'of historical observations {interleaved_images}, and current observation <image>\n. Your assigned task is: "{instruction}" '
-            f"Analyze this series of images to decide your next action, which could be turning left or right by a specific "
-            f"degree, moving forward a certain distance, or stop if the task is completed."
-        )
+        if getattr(self, 'action_sequence_mode', False):
+            K = getattr(self, 'action_sequence_length', 4)
+            question = (
+                f"<video>\n"
+                f'Instruction: {instruction}\n'
+                f"Predict the next {K} navigation actions. "
+                f"Output each action on a separate line, or use semicolons between actions. "
+                f"Actions: move forward 25 cm, turn left 15 degrees, turn right 15 degrees, stop."
+            )
+        else:
+            question = (
+                f"Imagine you are a robot programmed for navigation tasks. You have been given a video "
+                f'of historical observations {interleaved_images}, and current observation <image>\n. Your assigned task is: "{instruction}" '
+                f"Analyze this series of images to decide your next action, which could be turning left or right by a specific "
+                f"degree, moving forward a certain distance, or stop if the task is completed."
+            )
         
         # 构建对话
         conv_mode = "llama_3"
@@ -1128,15 +1145,15 @@ class NaVILANet(Net):
         # 注意：对于短序列生成（max_new_tokens=32），use_cache=False 性能影响不大
         # 且可以避免 transformers 4.56.0 中 past_key_values 为 None 的兼容性问题
         # 显式设置 past_key_values=None 以确保兼容性
-        with torch.inference_mode():
+        with torch.no_grad():
             output_ids = self.model.generate(
                 input_ids,
                 images=images_tensor.half().to(self.model.device),
                 do_sample=False,
                 temperature=0.0,
                 max_new_tokens=32,
-                use_cache=False,  # 设置为 False 以避免 past_key_values 为 None 的错误
-                past_key_values=None,  # 显式设置为 None 以确保兼容性
+                use_cache=False,
+                past_key_values=None,
                 stopping_criteria=[stopping_criteria],
                 pad_token_id=self.tokenizer.eos_token_id,
             )
@@ -1149,9 +1166,30 @@ class NaVILANet(Net):
             output_text = output_text[: -len(stop_str)]
         output_text = output_text.strip()
         
-        # 解析动作
-        action, num_repeats = self.action_parser.parse_action(output_text)
-        
+        # ── 解析动作（支持多动作序列模式）──
+        if getattr(self, 'action_sequence_mode', False):
+            action_sequence = self.action_parser.parse_action_sequence(output_text)
+            if len(action_sequence) == 0:
+                # Fallback to single-action parser
+                action, num_repeats = self.action_parser.parse_action(output_text)
+                action_sequence = [action]
+                if num_repeats > 1:
+                    for _ in range(1, num_repeats):
+                        action_sequence.append(action)
+            logger.info(
+                "[NaVILA-seq] output=\"%s\" actions=%s queue_before=%d",
+                output_text[:200],
+                action_sequence,
+                len(self.action_queue),
+            )
+            # Queue remaining actions (beyond the first)
+            for act in action_sequence[1:]:
+                self.action_queue.append({"action": int(act)})
+            action = int(action_sequence[0])
+            num_repeats = 1
+        else:
+            action, num_repeats = self.action_parser.parse_action(output_text)
+
         # 如果需要重复多次，将后续动作加入队列
         debug_record = self._build_debug_record(
             instruction=instruction,
@@ -1163,24 +1201,17 @@ class NaVILANet(Net):
         )
         self._store_debug_record(debug_record)
         aux_loss_state["navila_debug"] = torch.tensor(0.0)
-        # logger.info(
-        #     "[NaVILA] action=%s repeats=%d instruction=\"%s\" llm=\"%s\"",
-        #     debug_record["action_name"],
-        #     debug_record["repeats"],
-        #     debug_record["instruction"][:200],
-        #     debug_record["model_output"][:200],
-        # )  # silenced: per-step verbose
         if num_repeats > 1:
             for repeat_idx in range(2, num_repeats + 1):
                 queued_record = dict(debug_record)
                 queued_record["repeat_index"] = repeat_idx
                 queued_record["from_queue"] = True
                 self.action_queue.append({"action": action, "debug": queued_record})
-        
+
         # 返回特征（简单编码）
         features = torch.zeros(batch_size, self._output_size, device=rgb_obs.device)
         features[0, action] = 1.0
-        
+
         return features, rnn_hidden_states, aux_loss_state
     
     def reset_history(self):

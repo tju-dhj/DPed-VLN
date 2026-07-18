@@ -1,3 +1,4 @@
+from __future__ import annotations
 # Copyright 2024 Google Inc. HuggingFace Inc. team. All rights reserved.
 #
 #

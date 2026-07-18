@@ -19,9 +19,17 @@ from gym import spaces
 from habitat import logger
 from habitat_baselines.common.base_il_trainer import BaseILTrainer
 from habitat_baselines.common.baseline_registry import baseline_registry
-from habitat_baselines.common.tensorboard_utils import TensorboardWriter
+from habitat_baselines.common.tensorboard_utils import TensorboardWriter, get_writer
 from habitat_baselines.common.aux_losses import AuxLosses
-from habitat_baselines.utils.common import batch_obs, inference_mode
+from habitat_baselines.rl.ddppo.ddp_utils import (
+    load_resume_state,
+    save_resume_state,
+)
+from habitat_baselines.utils.common import (
+    batch_obs,
+    get_checkpoint_id,
+    inference_mode,
+)
 from habitat_baselines.rl.ddppo.policy.resnet_policy import PointNavResNetPolicy
 
 # 导入 habitat-lab 的几何工具，确保 GPS compass / heading 计算与模拟器完全一致
@@ -1038,9 +1046,297 @@ class DirectILTrainer(BaseILTrainer):
         # Checkpoint相关初始化
         self._last_checkpoint_percent = -1.0
         self._current_epoch = 0
+        self._total_updates = 0
         epochs = config.habitat_baselines.il.epochs
         self._total_epochs = epochs
-    
+
+        # Eval infrastructure (lazy init)
+        self._eval_envs = None
+        self._eval_agent = None
+        self._eval_env_spec = None
+        self._eval_rank0_keys = None
+        self._eval_obs_transforms = None
+
+    def _init_envs(self, config=None, is_eval: bool = False):
+        """初始化向量化环境（用于eval）"""
+        import hydra
+        from habitat_baselines.common.env_factory import VectorEnvFactory
+        from habitat_baselines.common.env_spec import EnvironmentSpec
+
+        if config is None:
+            config = self.config
+
+        env_factory: VectorEnvFactory = hydra.utils.instantiate(
+            config.habitat_baselines.vector_env_factory
+        )
+        self._eval_envs = env_factory.construct_envs(
+            config,
+            workers_ignore_signals=False,
+            enforce_scenes_greater_eq_environments=is_eval,
+            is_first_rank=True,
+        )
+        self._eval_env_spec = EnvironmentSpec(
+            observation_space=self._eval_envs.observation_spaces[0],
+            action_space=self._eval_envs.action_spaces[0],
+            orig_action_space=self._eval_envs.orig_action_spaces[0],
+        )
+        self._eval_rank0_keys = set(
+            list(config.habitat.task.rank0_env0_measure_names)
+            + list(config.habitat.task.rank0_measure_names)
+        )
+
+    def _create_agent(self):
+        """创建适配的 agent wrapper（用于eval）。
+
+        NaVidEvaluator 需要 agent.actor_critic 提供 action space 信息以及
+        act/update_hidden_state 接口。对于 DirectIL zero-shot eval，我们
+        创建一个最小化的 adapter 满足这些接口。
+        """
+        import types
+        import numpy as np
+        from gym import spaces
+
+        # Build obs transforms (IL config may not have rl.policy)
+        try:
+            from habitat_baselines.common.obs_transformers import (
+                get_active_obs_transforms,
+            )
+            self._eval_obs_transforms = get_active_obs_transforms(
+                self.config, self._eval_env_spec
+            )
+        except Exception:
+            self._eval_obs_transforms = []
+
+        # 从环境获取 action space
+        env_action_space = self._eval_env_spec.action_space
+        # 解析 multi-agent action space
+        agent0_space = None
+        if hasattr(env_action_space, 'spaces') and 'agent_0' in env_action_space.spaces:
+            agent0_space = env_action_space.spaces['agent_0']
+        elif isinstance(env_action_space, spaces.Dict):
+            for k, v in env_action_space.spaces.items():
+                if 'agent_0' in k:
+                    agent0_space = v
+                    break
+        if agent0_space is None:
+            agent0_space = env_action_space
+
+        # 确定 action 维度
+        if isinstance(agent0_space, spaces.Discrete):
+            action_dim = 1
+        elif isinstance(agent0_space, spaces.Box):
+            action_dim = int(np.prod(agent0_space.shape))
+        else:
+            action_dim = 1
+
+        # 创建最小化 ActorCritic adapter
+        class EvalActorCritic:
+            def __init__(self, action_space, obs_space, device):
+                self._action_space = action_space
+                self._obs_space = obs_space
+                self._device = device
+                self.net = None  # model reuse not available for direct IL eval
+
+            @property
+            def policy_action_space(self):
+                return self._action_space
+
+            @property
+            def policy_action_space_shape_lens(self):
+                if isinstance(self._action_space, spaces.Dict):
+                    return [int(np.prod(s.shape)) if isinstance(s, spaces.Box) else 1
+                            for s in self._action_space.spaces.values()]
+                return [action_dim]
+
+            @property
+            def hidden_state_shape_lens(self):
+                return [1]  # minimal: no RNN hidden state needed
+
+            @property
+            def hidden_state_shape(self):
+                return (1,)
+
+            def act(self, batch, recurrent_hidden_states, prev_actions,
+                    masks, deterministic=False, **kwargs):
+                # 返回 dummy action data，只需 env_actions 不为空
+                batch_size = 1
+                try:
+                    if isinstance(batch, dict):
+                        for v in batch.values():
+                            if hasattr(v, 'shape') and len(v.shape) >= 1:
+                                batch_size = v.shape[0]
+                                break
+                except Exception:
+                    pass
+                dummy_env_actions = torch.zeros(
+                    batch_size, action_dim, device=self._device
+                )
+                if isinstance(self._action_space, spaces.Discrete):
+                    dummy_env_actions = dummy_env_actions.long()
+
+                # Minimal return type
+                class ActionData:
+                    def __init__(self, env_actions, rnn_hidden_states):
+                        self.env_actions = env_actions
+                        self.actions = env_actions
+                        self.rnn_hidden_states = rnn_hidden_states
+                        self.should_inserts = None
+
+                return ActionData(dummy_env_actions,
+                                  torch.zeros(batch_size, 1, device=self._device))
+
+            def update_hidden_state(self, recurrent_hidden_states, prev_actions, action_data):
+                for i in range(len(recurrent_hidden_states)):
+                    recurrent_hidden_states[i].copy_(action_data.rnn_hidden_states[i])
+                for i in range(len(prev_actions)):
+                    prev_actions[i].copy_(action_data.actions[i])
+
+            def get_policy_info(self, batch, rnn_hidden_states, prev_actions, masks):
+                return {}
+
+        # 创建 EvalAgent adapter
+        class EvalAgent:
+            def __init__(self, ac, masks_shape):
+                self.actor_critic = ac
+                self._masks_shape = masks_shape
+                self._agents = [self]
+
+            @property
+            def masks_shape(self):
+                return self._masks_shape
+
+        actor_critic = EvalActorCritic(agent0_space, self._eval_env_spec.observation_space, self.device)
+        return EvalAgent(actor_critic, (1,))
+
+    def _eval_checkpoint(
+        self,
+        checkpoint_path: str,
+        writer: TensorboardWriter,
+        checkpoint_index: int = 0,
+    ) -> None:
+        """评估单个 checkpoint（支持 zero-shot 和 fine-tuned）"""
+        import hydra
+
+        config = self.config
+        should_load = config.habitat_baselines.eval.should_load_ckpt
+
+        # 1. Load checkpoint (if available)
+        if should_load and os.path.isfile(checkpoint_path):
+            ckpt_dict = self.load_checkpoint(checkpoint_path, map_location="cpu")
+            step_id = ckpt_dict.get("extra_state", {}).get("step", checkpoint_index)
+            logger.info(f"Loaded checkpoint from {checkpoint_path}, step={step_id}")
+        else:
+            ckpt_dict = {"config": None}
+            step_id = checkpoint_index
+            logger.info(f"Zero-shot eval mode (no training checkpoint)")
+
+        # 2. Init environments
+        self._init_envs(config, is_eval=True)
+        logger.info(f"Created {self._eval_envs.num_envs} eval environments")
+
+        # 3. Create agent
+        self._eval_agent = self._create_agent()
+        logger.info("Agent created for eval")
+
+        # 4. Adapt config: evaluator expects rl.policy, IL config uses il.policy
+        # Rebuild config from YAML to bypass structured schema constraints
+        from omegaconf import OmegaConf
+        config_yaml = OmegaConf.to_yaml(config)
+        config = OmegaConf.create(config_yaml)
+        OmegaConf.set_struct(config, False)
+        # Copy il.policy → rl.policy for evaluator compatibility
+        il_policy = OmegaConf.create(
+            OmegaConf.to_yaml(config.habitat_baselines.il.policy)
+        )
+        rl_cfg = OmegaConf.create({"policy": il_policy})
+        config.habitat_baselines.rl = rl_cfg
+
+        # 5. Create evaluator and evaluate
+        evaluator = hydra.utils.instantiate(config.habitat_baselines.evaluator)
+        logger.info(f"Evaluator: {type(evaluator).__name__}")
+
+        evaluator.evaluate_agent(
+            self._eval_agent,
+            self._eval_envs,
+            config,
+            checkpoint_index,
+            step_id,
+            writer,
+            self.device,
+            self._eval_obs_transforms,
+            self._eval_env_spec,
+            self._eval_rank0_keys,
+        )
+
+        # 5. Cleanup
+        self._eval_envs.close()
+        logger.info("Eval complete, environments closed")
+
+    def eval(self) -> None:
+        """Override eval() to bypass checkpoint polling loop.
+        DirectIL supports both zero-shot eval and checkpoint-based eval.
+        """
+        import time as _t0_time
+
+        self._add_preemption_signal_handlers()
+
+        resume_state = load_resume_state(self.config, filename_key="eval")
+        if resume_state is not None:
+            self.config = self._get_resume_state_config_or_new_config(
+                resume_state["config"]
+            )
+            prev_ckpt_ind = resume_state["prev_ckpt_ind"]
+        else:
+            prev_ckpt_ind = -1
+
+        self.device = (
+            torch.device("cuda", self.config.habitat_baselines.torch_gpu_id)
+            if torch.cuda.is_available()
+            else torch.device("cpu")
+        )
+
+        with get_writer(self.config, flush_secs=self.flush_secs) as writer:
+            ckpt_path = self.config.habitat_baselines.eval_ckpt_path_dir
+            should_load = self.config.habitat_baselines.eval.should_load_ckpt
+
+            if os.path.isfile(ckpt_path):
+                # Single checkpoint file
+                ckpt_idx = get_checkpoint_id(ckpt_path) or 0
+                logger.info(f"Evaluating single checkpoint: {ckpt_path}")
+                self._eval_checkpoint(ckpt_path, writer, checkpoint_index=ckpt_idx)
+            elif should_load and os.path.isdir(ckpt_path):
+                # Directory mode: evaluate all checkpoints in order
+                logger.info(f"Polling checkpoint folder: {ckpt_path}")
+                ckpt_files = sorted(
+                    [f for f in os.listdir(ckpt_path)
+                     if os.path.isfile(os.path.join(ckpt_path, f))
+                     and "latest" not in f
+                     and (f.endswith(".pth") or f.endswith(".ckpt") or f.endswith(".pt"))],
+                    key=lambda f: os.path.getmtime(os.path.join(ckpt_path, f)),
+                )
+                if not ckpt_files:
+                    logger.warning(
+                        f"No checkpoint files found in {ckpt_path}, "
+                        f"running in zero-shot mode"
+                    )
+                    self._eval_checkpoint(ckpt_path, writer, checkpoint_index=0)
+                else:
+                    for i, ckpt_file in enumerate(ckpt_files):
+                        if i <= prev_ckpt_ind:
+                            continue
+                        full_path = os.path.join(ckpt_path, ckpt_file)
+                        logger.info(f"Evaluating {full_path}")
+                        self._eval_checkpoint(full_path, writer, checkpoint_index=i)
+                        save_resume_state(
+                            {"config": self.config, "prev_ckpt_ind": i},
+                            self.config,
+                            filename_key="eval",
+                        )
+            else:
+                # Zero-shot: no checkpoint needed
+                logger.info("Zero-shot evaluation (should_load_ckpt=False)")
+                self._eval_checkpoint(ckpt_path, writer, checkpoint_index=0)
+
     def _init_distributed(self, dist_cfg):
         """初始化分布式训练环境（参考dagger_trainer）"""
         import torch.distributed as dist
@@ -1126,16 +1422,14 @@ class DirectILTrainer(BaseILTrainer):
         return self._current_epoch / self._total_epochs
     
     def should_checkpoint(self) -> bool:
-        needs_checkpoint = False
-        if self.config.habitat_baselines.num_checkpoints != -1:
-            checkpoint_every = 1 / self.config.habitat_baselines.num_checkpoints
-            if self._last_checkpoint_percent + checkpoint_every < self.percent_done():
-                needs_checkpoint = True
-                self._last_checkpoint_percent = self.percent_done()
-        else:
-            if self._current_epoch > 0:
-                needs_checkpoint = (self._current_epoch % self.config.habitat_baselines.checkpoint_interval) == 0
-        return needs_checkpoint
+        # Save every 500 updates (first save at update 500)
+        if self._total_updates > 0 and self._total_updates % 500 == 0:
+            return True
+        # Also save at epoch boundaries
+        if self._last_checkpoint_percent < self.percent_done():
+            self._last_checkpoint_percent = self.percent_done()
+            return True
+        return False
     
     def save_checkpoint(
         self, 
@@ -1168,13 +1462,11 @@ class DirectILTrainer(BaseILTrainer):
             "config": dict(self.config),  # 保存配置以便验证
         }
         
-        checkpoint_path = os.path.join(
-            self.config.habitat_baselines.checkpoint_folder,
-            file_name
-        )
-        
+        checkpoint_dir = self.config.habitat_baselines.checkpoint_folder
+        os.makedirs(checkpoint_dir, exist_ok=True)
+        checkpoint_path = os.path.join(checkpoint_dir, file_name)
         torch.save(checkpoint, checkpoint_path)
-        # logger.info(f"✓ Saved checkpoint to {checkpoint_path}")
+        logger.info(f"[CKPT] Saved {file_name} ({os.path.getsize(checkpoint_path)/1e6:.1f}MB)")
         
         # 同时保存为latest.pth，方便恢复
         latest_path = os.path.join(
@@ -1413,6 +1705,8 @@ class DirectILTrainer(BaseILTrainer):
             self._init_navilla_policy(filtered_obs, action_space, hidden_size, policy_cfg, model_cfg, il_cfg)
         elif policy_name == "StreamVLNPolicy":
             self._init_streamvln_policy(filtered_obs, action_space, hidden_size, policy_cfg, model_cfg, il_cfg)
+        elif policy_name == "NaVidPolicy":
+            self._init_navid_policy(filtered_obs, action_space, hidden_size, policy_cfg, model_cfg, il_cfg)
         else:
             # 默认使用 PointNavResNetPolicy
             self.policy = PointNavResNetPolicy(
@@ -1441,6 +1735,36 @@ class DirectILTrainer(BaseILTrainer):
         # 打印模型结构和参数统计
         self.module_stats, self.total_trainable, self.total_params = self._print_model_structure(self.policy)
 
+        # ── 仿照 dynamic_vln_trainer 的 train_encoder 处理方式 ──
+        self._is_static_encoder = not getattr(model_cfg, "train_encoder", True)
+        if self._is_static_encoder:
+            logger.info("[IL Trainer] train_encoder=False: encoder frozen")
+
+        # 优化器
+        self.optimizer = torch.optim.Adam(
+            filter(lambda p: p.requires_grad, self.policy.parameters()),
+            lr=float(il_cfg.optim.lr),
+            eps=float(il_cfg.optim.eps),
+        )
+        self.max_grad_norm = float(il_cfg.optim.max_grad_norm)
+
+        # 学习率调度器
+        epochs = self.config.habitat_baselines.il.epochs
+        self.lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            self.optimizer, T_max=epochs
+        ) if getattr(il_cfg.optim, "use_lr_scheduler", True) else None
+
+        # CrossEntropyLoss
+        class_weight_enabled = getattr(il_cfg, "class_weight_enabled", True)
+        if class_weight_enabled:
+            class_weights_list = getattr(il_cfg, "class_weights", [3.0, 0.6, 1.0, 1.0])
+            self.criterion = torch.nn.CrossEntropyLoss(
+                reduction="none",
+                weight=torch.tensor(class_weights_list, dtype=torch.float32, device=self.device),
+            )
+        else:
+            self.criterion = torch.nn.CrossEntropyLoss(reduction="none")
+
     def _init_navilla_policy(self, observation_space, action_space, hidden_size, policy_cfg, model_cfg, il_cfg):
         """Initialize NaVILA policy with optional LoRA fine-tuning"""
         from habitat_baselines.rl.ddppo.policy.navila_policy import NaVILAPolicy
@@ -1455,6 +1779,34 @@ class DirectILTrainer(BaseILTrainer):
         logger.info(f"[NaVILA-IL] Initializing NaVILAPolicy from {model_path}")
 
         self.policy = NaVILAPolicy(
+            observation_space=observation_space,
+            action_space=action_space,
+            hidden_size=hidden_size,
+            model_path=model_path,
+            num_video_frames=num_video_frames,
+            forward_step=forward_step,
+            turn_step=turn_step,
+            policy_config=policy_cfg,
+        ).to(self.device)
+
+        use_lora = getattr(model_cfg, "use_lora", False)
+        if use_lora and PEFT_AVAILABLE:
+            self._apply_lora_to_vlm_policy()
+
+    def _init_navid_policy(self, observation_space, action_space, hidden_size, policy_cfg, model_cfg, il_cfg):
+        """Initialize NaVid policy with optional LoRA fine-tuning"""
+        from habitat_baselines.rl.ddppo.policy.navid_policy import NaVidPolicy
+
+        model_path = getattr(model_cfg, "model_path", None)
+        if model_path is None and policy_cfg is not None:
+            model_path = getattr(policy_cfg, "model_path", None)
+        num_video_frames = getattr(policy_cfg, "num_video_frames", 4) if policy_cfg else 4
+        forward_step = getattr(policy_cfg, "forward_step", 25) if policy_cfg else 25
+        turn_step = getattr(policy_cfg, "turn_step", 15) if policy_cfg else 15
+
+        logger.info(f"[NaVid-IL] Initializing NaVidPolicy from {model_path}")
+
+        self.policy = NaVidPolicy(
             observation_space=observation_space,
             action_space=action_space,
             hidden_size=hidden_size,
@@ -1505,7 +1857,13 @@ class DirectILTrainer(BaseILTrainer):
             self._apply_lora_to_vlm_policy()
 
     def _apply_lora_to_vlm_policy(self):
-        """Apply LoRA adapter to VLM-based policy (NaVILA/StreamVLN)"""
+        """Apply LoRA adapter to VLM-based policy (NaVILA/StreamVLN).
+
+        IMPORTANT: get_peft_model modifies the base model IN-PLACE (injecting lora_A/lora_B
+        adapters and freezing original weights), and returns a PeftModel wrapper. We MUST
+        assign the PeftModel wrapper BACK to the model hierarchy so that the policy's
+        parameter enumeration and forward pass both see it.
+        """
         if not PEFT_AVAILABLE:
             logger.warning("[LoRA] PEFT not available, skipping")
             return
@@ -1518,39 +1876,338 @@ class DirectILTrainer(BaseILTrainer):
             ["q_proj", "k_proj", "v_proj", "o_proj",
              "gate_proj", "up_proj", "down_proj"])
 
-        # Find the VLM's language model
+        # Find the VLM's underlying language model (LLM)
+        # NaviLLa: policy.net.model (LlavaLlamaModel) → .llm (LlamaForCausalLM)
+        # StreamVLN: policy.net.model (StreamVLNForCausalLM) — IS already a causal LM
         vlm_model = None
+        parent_obj = None   # the object that holds the attribute pointing to vlm_model
+        parent_attr = None  # the attribute name on parent_obj, e.g. 'llm' or 'model'
         if hasattr(self.policy, 'net'):
             net = self.policy.net
-            for attr in ['llm', 'llava_model', 'model', 'language_model']:
-                vlm_model = getattr(net, attr, None)
-                if vlm_model is not None:
+            # Step 1: find the multimodal wrapper / causal LM
+            wrapper = None
+            wrapper_attr = None
+            for attr in ['model', 'llava_model', 'llm', 'language_model']:
+                wrapper = getattr(net, attr, None)
+                if wrapper is not None:
+                    wrapper_attr = attr
                     break
-            # Fallback: search for any module with target layers
-            if vlm_model is None:
-                for name, module in net.named_modules():
-                    if isinstance(module, torch.nn.Linear) and any(
-                        t in name for t in target_modules):
-                        vlm_model = net
-                        break
+            if wrapper is not None:
+                # Step 2: if wrapper IS already a causal LM (has prepare_inputs_for_generation), use it directly
+                if hasattr(wrapper, 'prepare_inputs_for_generation'):
+                    vlm_model = wrapper
+                    parent_obj = net
+                    parent_attr = wrapper_attr
+                    logger.info(f"[LoRA] Using wrapper net.{wrapper_attr} as causal LM directly")
+                else:
+                    # Step 3: drill into multimodal wrapper to find the causal LM inside
+                    for attr in ['llm', 'language_model']:
+                        inner = getattr(wrapper, attr, None)
+                        if inner is not None and hasattr(inner, 'prepare_inputs_for_generation'):
+                            vlm_model = inner
+                            parent_obj = wrapper
+                            parent_attr = attr
+                            logger.info(f"[LoRA] Found causal LM via net.{wrapper_attr}.{attr}")
+                            break
+                    # Step 4: fallback — use the wrapper itself
+                    if vlm_model is None:
+                        vlm_model = wrapper
+                        parent_obj = net
+                        parent_attr = wrapper_attr
+                        logger.info(f"[LoRA] Fallback: using net.{wrapper_attr} (no prepare_inputs_for_generation found inside)")
 
         if vlm_model is None:
             logger.warning("[LoRA] Could not find VLM language model, skipping LoRA")
             return
 
         try:
+            # Validate target modules exist before applying LoRA
+            available_linears = []
+            for n, m in vlm_model.named_modules():
+                if isinstance(m, torch.nn.Linear):
+                    available_linears.append(n)
+            logger.info(f"[LoRA] Available Linear modules in target model: {available_linears}")
+            valid_targets = [t for t in target_modules if any(n.endswith(t) for n in available_linears)]
+            if not valid_targets:
+                logger.warning(
+                    f"[LoRA] None of the requested target_modules {target_modules} found in model. "
+                    f"Available Linear modules: {available_linears}. "
+                    f"Will auto-detect Qwen/LLaMA projection layers."
+                )
+                valid_targets = []
+                for n in available_linears:
+                    n_short = n.split('.')[-1]
+                    if n_short not in valid_targets and n_short.endswith('_proj'):
+                        valid_targets.append(n_short)
+                if not valid_targets:
+                    valid_targets = list(set(n.split('.')[-1] for n in available_linears if 'proj' in n.lower()))
+            logger.info(f"[LoRA] Using target_modules: {valid_targets}")
+
             peft_config = LoraConfig(
                 r=lora_r,
                 lora_alpha=lora_alpha,
-                target_modules=target_modules,
+                target_modules=valid_targets,
                 lora_dropout=lora_dropout,
                 bias="none",
                 task_type="CAUSAL_LM",
             )
-            vlm_model = get_peft_model(vlm_model, peft_config)
-            logger.info(f"[LoRA] Applied to VLM: r={lora_r}, alpha={lora_alpha}")
+            peft_model = get_peft_model(vlm_model, peft_config)
+
+            # ── CRITICAL: assign PeftModel BACK to the model hierarchy ──
+            if parent_obj is not None and parent_attr is not None:
+                setattr(parent_obj, parent_attr, peft_model)
+                logger.info(
+                    f"[LoRA CRITICAL] Assigned PeftModel back: "
+                    f"parent={type(parent_obj).__name__}, attr={parent_attr}, "
+                    f"peft_model={type(peft_model).__name__}"
+                )
+            else:
+                logger.error("[LoRA CRITICAL] Could not determine parent object — PeftModel wrapper is lost!")
+                return
+
+            logger.info(f"[LoRA] Applied to VLM: r={lora_r}, alpha={lora_alpha}, target_modules={valid_targets}")
+
+            # ── Post-LoRA verification ──
+            self._verify_lora_setup(peft_model, lora_r, lora_alpha)
         except Exception as e:
-            logger.warning(f"[LoRA] Failed: {e}")
+            logger.warning(f"[LoRA] Failed: {e}. Continuing without LoRA.")
+            import traceback
+            traceback.print_exc()
+
+    def _verify_lora_setup(self, peft_model, lora_r, lora_alpha):
+        """Verify that LoRA setup is correct: PeftModel, trainable params, lora_A/B present."""
+        import torch
+        from peft import PeftModel
+
+        is_peft = isinstance(peft_model, PeftModel)
+        logger.info(f"[LoRA VERIFY] peft_model is PeftModel = {is_peft}")
+        logger.info(f"[LoRA VERIFY] peft_model type = {type(peft_model)}")
+
+        trainable = [(n, p.numel()) for n, p in self.policy.named_parameters() if p.requires_grad]
+        total_trainable = sum(x[1] for x in trainable)
+        logger.info(f"[LoRA VERIFY] Policy trainable param tensors = {len(trainable)}")
+        logger.info(f"[LoRA VERIFY] Policy trainable params = {total_trainable / 1e6:.2f}M")
+        if len(trainable) > 0:
+            logger.info(f"[LoRA VERIFY] First 20 trainable params: {[x[0] for x in trainable[:20]]}")
+
+        lora_params = [
+            n for n, p in self.policy.named_parameters()
+            if ("lora_A" in n or "lora_B" in n)
+        ]
+        logger.info(f"[LoRA VERIFY] lora_A/lora_B param count = {len(lora_params)}")
+        if len(lora_params) > 0:
+            logger.info(f"[LoRA VERIFY] First 20 lora params: {lora_params[:20]}")
+
+        # Also check peft_model internal params
+        peft_trainable = [(n, p.numel()) for n, p in peft_model.named_parameters() if p.requires_grad]
+        logger.info(f"[LoRA VERIFY] peft_model trainable params = {sum(x[1] for x in peft_trainable) / 1e6:.2f}M")
+
+        # Safety assertions
+        if not is_peft:
+            logger.error("[LoRA VERIFY] CRITICAL: model is NOT PeftModel!")
+        if len(trainable) == 0:
+            logger.error("[LoRA VERIFY] CRITICAL: no trainable params in policy!")
+        if len(lora_params) == 0:
+            logger.error("[LoRA VERIFY] CRITICAL: no lora_A/lora_B params found!")
+
+    def _lora_one_batch_probe(self, dataloader) -> None:
+        """One-batch forward+backward probe to catch graph-disconnection early.
+
+        Takes the first training batch, runs model forward, checks loss.requires_grad,
+        and attempts loss.backward(). Reports detailed diagnostics.
+        """
+        import torch
+        from peft import PeftModel
+
+        logger.info("[LoRA PROBE] ======== Starting one-batch probe ========")
+        try:
+            first_iter = iter(dataloader)
+            batch = next(first_iter, None)
+            if batch is None:
+                logger.error("[LoRA PROBE] No batch available for probe!")
+                return
+            obs_batch, prev_act, not_done, corr_act, weights = batch
+        except Exception as e:
+            logger.error(f"[LoRA PROBE] Failed to get batch: {e}")
+            return
+
+        # Print batch info
+        logger.info(f"[LoRA PROBE] Batch loaded: obs_keys={list(obs_batch.keys())}")
+        for k, v in obs_batch.items():
+            if isinstance(v, torch.Tensor):
+                logger.info(f"[LoRA PROBE]   {k}: shape={tuple(v.shape)}, dtype={v.dtype}")
+
+        # Check policy type
+        policy = self._get_policy()
+        logger.info(f"[LoRA PROBE] policy type = {type(policy).__name__}")
+        logger.info(f"[LoRA PROBE] policy.net type = {type(policy.net).__name__}")
+
+        # Quick trainable param check (canonical)
+        trainable_pre = [(n, p.numel()) for n, p in policy.named_parameters() if p.requires_grad]
+        logger.info(f"[LoRA PROBE] Pre-probe trainable params = {sum(x[1] for x in trainable_pre) / 1e6:.2f}M "
+                    f"({len(trainable_pre)} tensors)")
+
+        # Move batch to device
+        try:
+            device = next(policy.parameters()).device
+        except StopIteration:
+            device = self.device
+
+        obs_batch_dev = {}
+        for k, v in obs_batch.items():
+            if isinstance(v, torch.Tensor):
+                obs_batch_dev[k] = v.to(device)
+            else:
+                obs_batch_dev[k] = v
+        prev_act_dev = prev_act.to(device)
+        not_done_dev = not_done.to(device)
+
+        # Run forward (first timestep only)
+        logger.info("[LoRA PROBE] Running forward pass...")
+        policy.train()
+        B_actual, T_actual = corr_act.shape
+
+        obs_t = {}
+        for k, v in obs_batch_dev.items():
+            v_reshaped = v.view(B_actual, T_actual, *v.shape[1:])
+            obs_t[k] = v_reshaped[:, 0].contiguous()
+        prev_action_t = prev_act_dev.view(B_actual, T_actual, 1)[:, 0].contiguous()
+        mask_t = not_done_dev.view(B_actual, T_actual, 1)[:, 0].contiguous()
+
+        hidden_state = torch.zeros(
+            B_actual, policy.num_recurrent_layers, policy.recurrent_hidden_size,
+            device=device,
+        )
+
+        try:
+            features_t, _, _ = policy.net(obs_t, hidden_state, prev_action_t, mask_t)
+        except Exception as e:
+            logger.error(f"[LoRA PROBE] Forward pass failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return
+
+        logger.info(f"[LoRA PROBE] features_t shape={tuple(features_t.shape)}, "
+                    f"requires_grad={features_t.requires_grad}")
+
+        # Run action distribution
+        dist = policy.action_distribution(features_t)
+        logger.info(f"[LoRA PROBE] dist.logits shape={tuple(dist.logits.shape)}, "
+                    f"requires_grad={dist.logits.requires_grad}, "
+                    f"grad_fn={dist.logits.grad_fn}")
+
+        # Create dummy labels and compute loss
+        corr_act_flat = corr_act[:, 0].to(device)
+        iw_t = weights[:, 0].to(device)
+        valid_mask = (corr_act_flat >= 0) & (corr_act_flat < 4) & (iw_t > 0)
+        if not valid_mask.any():
+            logger.error("[LoRA PROBE] No valid actions in first timestep!")
+            return
+        corr_act_flat = torch.where(valid_mask, corr_act_flat, torch.zeros_like(corr_act_flat))
+        ce = self.criterion(dist.logits, corr_act_flat)
+        loss = (ce * iw_t).sum() / iw_t.sum()
+
+        logger.info(f"[LoRA PROBE] loss={loss.item():.6f}, "
+                    f"requires_grad={loss.requires_grad}, "
+                    f"grad_fn={loss.grad_fn}")
+
+        # Logits
+        if hasattr(dist, 'logits'):
+            logger.info(f"[LoRA PROBE] logits.requires_grad={dist.logits.requires_grad}, "
+                        f"logits.grad_fn={dist.logits.grad_fn}")
+
+        # Labels check
+        labels_non_ignore = (corr_act_flat != -100).sum().item()
+        logger.info(f"[LoRA PROBE] labels shape={tuple(corr_act_flat.shape)}, "
+                    f"non-IGNORE_INDEX count={labels_non_ignore}")
+
+        if not loss.requires_grad:
+            logger.error("[LoRA PROBE] *** LOSS DOES NOT REQUIRE GRAD ***")
+            if hasattr(dist, 'logits') and dist.logits.requires_grad:
+                logger.warning("[LoRA PROBE] logits requires_grad=True but loss does not — "
+                               "this is unusual, check loss computation")
+            else:
+                logger.error("[LoRA PROBE] Neither logits nor loss require grad — "
+                             "check forward path for inference_mode/no_grad/detach")
+        else:
+            logger.info("[LoRA PROBE] ✓ loss.requires_grad=True")
+
+        # Try backward
+        logger.info("[LoRA PROBE] Attempting loss.backward()...")
+        try:
+            loss.backward()
+            logger.info("[LoRA PROBE] ✓ loss.backward() succeeded!")
+        except Exception as e:
+            logger.error(f"[LoRA PROBE] *** loss.backward() FAILED: {e} ***")
+            # Print full diagnostics
+            trainable_diag = [(n, p.numel(), p.requires_grad, p.grad_fn if hasattr(p, 'grad_fn') else 'N/A')
+                              for n, p in policy.named_parameters() if p.requires_grad]
+            logger.error(f"[LoRA PROBE] Current trainable params ({len(trainable_diag)}):")
+            for n, numel, rg, gf in trainable_diag[:20]:
+                logger.error(f"[LoRA PROBE]   {n}: numel={numel}, requires_grad={rg}")
+            return
+
+        # Check LoRA grad
+        lora_grad_info = []
+        for n, p in policy.named_parameters():
+            if ("lora_A" in n or "lora_B" in n) and p.requires_grad:
+                grad_norm = p.grad.norm().item() if p.grad is not None else 0.0
+                lora_grad_info.append((n, p.grad is not None, grad_norm))
+
+        logger.info(f"[LoRA PROBE] LoRA grad check ({len(lora_grad_info)} lora params):")
+        for n, has_grad, gnorm in lora_grad_info[:10]:
+            logger.info(f"[LoRA PROBE]   {n}: grad_not_None={has_grad}, grad_norm={gnorm:.6f}")
+
+        any_lora_grad = any(info[1] for info in lora_grad_info)
+        if any_lora_grad:
+            logger.info("[LoRA PROBE] ✓ At least one LoRA param has non-None grad!")
+        else:
+            logger.error("[LoRA PROBE] *** NO LoRA param has grad! ***")
+
+        # Cleanup
+        policy.zero_grad(set_to_none=True)
+        logger.info("[LoRA PROBE] ======== Probe complete (grads cleared) ========")
+
+    def _install_lora_forward_hook(self) -> None:
+        """Install a forward hook on the first LoRA-enabled q_proj to monitor gradient flow."""
+        import torch
+
+        found = False
+        for name, module in self.policy.named_modules():
+            if name.endswith("q_proj") and hasattr(module, "lora_A"):
+                found = True
+                logger.info(f"[LoRA HOOK] Installing forward hook on: {name}")
+
+                def _make_hook(mod_name):
+                    def _hook(module, input, output):
+                        if not hasattr(_hook, '_fired'):
+                            _hook._fired = True
+                            if isinstance(output, tuple):
+                                out0 = output[0]
+                            else:
+                                out0 = output
+                            logger.info(
+                                f"[LoRA HOOK] q_proj '{mod_name}' output: "
+                                f"requires_grad={out0.requires_grad}, "
+                                f"grad_fn={out0.grad_fn}"
+                            )
+                        return output
+                    _hook._fired = False
+                    return _hook
+
+                module.register_forward_hook(_make_hook(name))
+                break
+
+        if not found:
+            logger.warning("[LoRA HOOK] No q_proj with lora_A found — LoRA may not be properly injected!")
+            # Print all modules ending with q_proj for debugging
+            qproj_names = [n for n, m in self.policy.named_modules() if n.endswith("q_proj")]
+            logger.info(f"[LoRA HOOK] All q_proj modules found: {qproj_names[:10]}")
+            for n in qproj_names[:5]:
+                m = dict(self.policy.named_modules())[n]
+                logger.info(f"[LoRA HOOK]   {n}: type={type(m).__name__}, "
+                            f"has_lora_A={hasattr(m, 'lora_A')}, "
+                            f"has_lora_B={hasattr(m, 'lora_B')}")
 
     def _apply_lora_to_resnet_policy(self):
         """Apply LoRA to transformer modules in ResNet policy"""
@@ -1582,159 +2239,6 @@ class DirectILTrainer(BaseILTrainer):
                 logger.info(f"[LoRA] Applied to ResNet: {target_modules}")
             except Exception as e:
                 logger.warning(f"[LoRA] Failed on ResNet: {e}")
-        
-        # 加载预训练权重
-        pretrained_weights = getattr(model_cfg, "pretrained_weights", None)
-        pretrained = getattr(model_cfg, "pretrained", False)
-        pretrained_encoder = getattr(model_cfg, "pretrained_encoder", False)
-        is_clip_architecture = backbone in ["resnet50_clip_text", "resnet50_clip_attnpool"]
-        is_vlm_policy = policy_name in ("NaVILAPolicy", "StreamVLNPolicy")
-
-        # VLM 策略通过 model_path 加载预训练权重，跳过此处的 PointNavResNet 格式加载
-        if not is_vlm_policy and pretrained and pretrained_weights is not None and os.path.exists(pretrained_weights):
-            try:
-                checkpoint = torch.load(pretrained_weights, map_location="cpu", weights_only=False)
-
-                if isinstance(checkpoint, dict):
-                    integer_keys = [k for k in checkpoint.keys() if isinstance(k, int)]
-                    if len(integer_keys) >= 7:
-                        agent_0_dict = checkpoint.get(0, checkpoint)
-                        if isinstance(agent_0_dict, dict):
-                            if "state_dict" in agent_0_dict:
-                                state_dict = agent_0_dict["state_dict"]
-                            elif "actor_critic" in agent_0_dict:
-                                state_dict = agent_0_dict["actor_critic"]
-                            else:
-                                state_dict = agent_0_dict
-                        else:
-                            state_dict = agent_0_dict
-                    elif "state_dict" in checkpoint:
-                        state_dict = checkpoint["state_dict"]
-                    elif "model_state_dict" in checkpoint:
-                        state_dict = checkpoint["model_state_dict"]
-                    elif "actor_critic" in checkpoint:
-                        state_dict = checkpoint["actor_critic"]
-                    else:
-                        state_dict = checkpoint
-                else:
-                    state_dict = checkpoint
-
-                model_state = self.policy.state_dict()
-                compatible_dict = {}
-
-                def _normalize_state_key(key: str) -> str:
-                    normalized_key = key
-                    for prefix in ("actor_critic.", "model."):
-                        if normalized_key.startswith(prefix):
-                            normalized_key = normalized_key[len(prefix):]
-                    return normalized_key
-
-                for k, v in state_dict.items():
-                    if not isinstance(k, str):
-                        continue
-
-                    key = _normalize_state_key(k)
-
-                    if key.startswith("critic") or key.startswith("critic_head"):
-                        continue
-
-                    if is_clip_architecture:
-                        if (
-                            key.startswith("net.visual_encoder.backbone.")
-                            or key.startswith("net.visual_encoder.compression.")
-                            or key.startswith("net.visual_encoder.running_mean_and_var.")
-                        ):
-                            continue
-
-                        if (
-                            key.startswith("net.visual_encoder.clip_model.")
-                            or key.startswith("net.visual_encoder.visual_encoder.")
-                            or key.startswith("net.visual_encoder.text_projection.")
-                            or key.startswith("net.visual_encoder.cross_modal_attention.")
-                            or key.startswith("net.visual_encoder.visual_projection.")
-                            or key.startswith("net.visual_encoder.output_projection.")
-                        ):
-                            continue
-
-                    if key in model_state and v.shape == model_state[key].shape:
-                        compatible_dict[key] = v
-
-                self.policy.load_state_dict(compatible_dict, strict=False)
-            except Exception as e:
-                logger.warning(f"✗ Failed to load pretrained weights: {e}\n")
-        elif pretrained_encoder and pretrained_weights is not None and os.path.exists(pretrained_weights):
-            try:
-                checkpoint = torch.load(pretrained_weights, map_location="cpu", weights_only=False)
-                state_dict = checkpoint.get("state_dict", checkpoint) if isinstance(checkpoint, dict) else checkpoint
-                prefix = "actor_critic.net.visual_encoder."
-                encoder_state = {
-                    k[len(prefix):]: v
-                    for k, v in state_dict.items()
-                    if isinstance(k, str) and k.startswith(prefix)
-                }
-                self.policy.net.visual_encoder.load_state_dict(encoder_state, strict=False)
-            except Exception as e:
-                logger.warning(f"✗ Failed to load pretrained encoder weights: {e}\n")
-        else:
-            pass
-
-        # ── 仿照 dynamic_vln_trainer 的 train_encoder 处理方式 ──
-        # 当 train_encoder=False 时，在训练循环中预计算 visual_features 注入 batch，
-        # policy.net 检测到 visual_features key 后会跳过 encoder 推理
-        self._is_static_encoder = not getattr(model_cfg, "train_encoder", True)
-        if self._is_static_encoder:
-            logger.info("[IL Trainer] train_encoder=False: encoder frozen, will pre-compute visual features")
-
-        # 优化器
-        self.optimizer = torch.optim.Adam(
-            filter(lambda p: p.requires_grad, self.policy.parameters()),
-            lr=float(il_cfg.optim.lr),
-            eps=float(il_cfg.optim.eps),
-        )
-        self.max_grad_norm = float(il_cfg.optim.max_grad_norm)
-
-        # 动作类别权重：解决严重类别不均衡问题
-        # 分布: stop=2.36%, forward=45.56%, left=24.97%, right=27.11%
-        # stop 是导航成功的关键，但占比极低，必须提高权重
-        class_weight_enabled = getattr(il_cfg, "class_weight_enabled", True)
-        if class_weight_enabled:
-            class_weights_list = getattr(il_cfg, "class_weights", [3.0, 0.6, 1.0, 1.0])
-            class_weights_tensor = torch.tensor(class_weights_list, dtype=torch.float32,
-                                                device=self.device)
-            self.criterion = torch.nn.CrossEntropyLoss(
-                reduction="none", weight=class_weights_tensor
-            )
-            logger.info(f"Using class-weighted CrossEntropyLoss:")
-            logger.info(f"  Action distribution: stop=2.36%, forward=45.56%, left=24.97%, right=27.11%")
-            logger.info(f"  Class weights: stop={class_weights_list[0]}, forward={class_weights_list[1]}, "
-                        f"left={class_weights_list[2]}, right={class_weights_list[3]}")
-            logger.info(f"  (set il.class_weight_enabled=False to disable)")
-        else:
-            self.criterion = torch.nn.CrossEntropyLoss(reduction="none")
-            logger.info(f"Using unweighted CrossEntropyLoss")
-
-        # 学习率调度器：使用余弦退火，帮助模型逃离局部最优
-        # T_max 设为 epoch 总数，让 lr 从初始值平滑衰减到接近 0
-        use_lr_scheduler = getattr(il_cfg.optim, "use_lr_scheduler", True)
-        if use_lr_scheduler:
-            epochs = self.config.habitat_baselines.il.epochs
-            self.lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-                self.optimizer,
-                T_max=epochs,
-                eta_min=float(il_cfg.optim.lr) * 0.01,  # 最低降到初始lr的1%
-            )
-            # logger.info(f"LR Scheduler: CosineAnnealingLR (T_max={epochs}, eta_min={self.lr_scheduler.eta_min:.2e})")
-        else:
-            self.lr_scheduler = None
-
-        # logger.info(f"Optimizer: Adam (lr={il_cfg.optim.lr}, eps={il_cfg.optim.eps})")
-        # logger.info(f"Max grad norm: {self.max_grad_norm}")
-        # logger.info(f"Loss function: CrossEntropyLoss\n")
-
-        # 分布式训练包装
-        if self._is_distributed:
-            self._wrap_model_for_distributed()
-    
     def train(self) -> None:
         """训练主循环（直接从文件读取数据，不经过模拟器）"""
         observation_space, action_space = self._get_spaces()
@@ -2038,6 +2542,31 @@ class DirectILTrainer(BaseILTrainer):
                     logger.info(f"{self._debug_step_prefix} start_epoch={start_epoch}, epochs={epochs}, len(dataloader)={len(dataloader)}")
                     logger.info(f"{self._debug_step_prefix} device={self.device}, num_workers={getattr(dataloader, 'num_workers', 'n/a')}")
 
+                # ── LoRA one-batch probe: 提前发现断图问题 ──
+                _use_lora = getattr(self.config.habitat_baselines.il.model, "use_lora", False)
+                _skip_probe = os.environ.get("LORA_SKIP_PROBE", "0") == "1"
+                if _use_lora and self._is_rank0():
+                    if _skip_probe:
+                        logger.info("[LoRA] Skipping one-batch probe (LORA_SKIP_PROBE=1)")
+                    else:
+                        self._lora_one_batch_probe(dataloader)
+
+                # ── LoRA forward hook: 监控第一个 q_proj 的输出版本 ──
+                _skip_hook = os.environ.get("LORA_SKIP_HOOK", "0") == "1"
+                if _use_lora and self._is_rank0():
+                    if _skip_hook:
+                        logger.info("[LoRA] Skipping forward hook (LORA_SKIP_HOOK=1)")
+                    else:
+                        self._install_lora_forward_hook()
+
+                # ── 清理内存碎片，防止 malloc_consolidate crash ──
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    torch.cuda.synchronize()
+                if self._is_rank0():
+                    logger.info("[LoRA] Memory cleanup: gc + cuda empty_cache done")
+
                 for epoch in (range(start_epoch, epochs) if self._debug_minimal_mode else tqdm.trange(
                     start_epoch,  # 从resume的epoch开始
                     epochs,
@@ -2128,7 +2657,9 @@ class DirectILTrainer(BaseILTrainer):
                             AuxLosses.clear()
 
                             # ── 仿照 dynamic_vln_trainer: 预计算 visual features 注入 batch ──
-                            if self._is_static_encoder:
+                            # 仅适用于 PointNavResNetPolicy (有独立的 visual_encoder)
+                            # NaVILA/StreamVLN 等 VLM 策略没有 visual_encoder，跳过此步骤
+                            if self._is_static_encoder and hasattr(policy.net, 'visual_encoder'):
                                 from habitat_baselines.rl.ddppo.policy.resnet_policy import PointNavResNetNet
                                 visual_encoder = policy.net.visual_encoder
                                 visual_encoder.eval()
@@ -2223,6 +2754,7 @@ class DirectILTrainer(BaseILTrainer):
                             grad_norms.append(total_norm.item())
 
                             self.optimizer.step()
+                            self._total_updates += 1
 
                             with torch.no_grad():
                                 pred_actions = dist.logits.argmax(dim=-1)

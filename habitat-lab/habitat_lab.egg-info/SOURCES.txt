@@ -29,10 +29,13 @@ habitat/config/default.py
 habitat/config/default_structured_configs.py
 habitat/config/read_write.py
 habitat/config/__pycache__/__init__.cpython-311.pyc
+habitat/config/__pycache__/__init__.cpython-314.pyc
 habitat/config/__pycache__/__init__.cpython-39.pyc
 habitat/config/__pycache__/default.cpython-311.pyc
+habitat/config/__pycache__/default.cpython-314.pyc
 habitat/config/__pycache__/default.cpython-39.pyc
 habitat/config/__pycache__/default_structured_configs.cpython-311.pyc
+habitat/config/__pycache__/default_structured_configs.cpython-314.pyc
 habitat/config/__pycache__/default_structured_configs.cpython-39.pyc
 habitat/config/__pycache__/read_write.cpython-39.pyc
 habitat/config/benchmark/multi_agent/hssd_spot_human.yaml
@@ -156,7 +159,6 @@ habitat/config/habitat/simulator/sensor_setups/rgbds_agent.yaml
 habitat/config/habitat/simulator/sensor_setups/semantic_agent.yaml
 habitat/config/habitat/simulator/sensor_setups/spot_agent.yaml
 habitat/config/habitat/task/astar_task_detail.yaml
-habitat/config/habitat/task/dynamic_vlnce_task.yaml
 habitat/config/habitat/task/eqa.yaml
 habitat/config/habitat/task/falcon_task_detail.yaml
 habitat/config/habitat/task/falcon_task_detail_locobot.yaml
@@ -198,6 +200,7 @@ habitat/core/registry.py
 habitat/core/simulator.py
 habitat/core/spaces.py
 habitat/core/utils.py
+habitat/core/vector_env copy.py
 habitat/core/vector_env.py
 habitat/core/batch_rendering/__init__.py
 habitat/core/batch_rendering/env_batch_renderer.py
@@ -240,6 +243,7 @@ habitat/datasets/rearrange/samplers/object_target_sampler.py
 habitat/datasets/rearrange/samplers/receptacle.py
 habitat/datasets/rearrange/samplers/scene_sampler.py
 habitat/datasets/vln/__init__.py
+habitat/datasets/vln/dynamic_vlnce_dataset copy.py
 habitat/datasets/vln/dynamic_vlnce_dataset.py
 habitat/datasets/vln/r2r_vln_dataset.py
 habitat/gym/__init__.py

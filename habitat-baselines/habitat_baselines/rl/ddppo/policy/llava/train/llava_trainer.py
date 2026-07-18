@@ -1,3 +1,4 @@
+from __future__ import annotations
 # Copyright 2024 NVIDIA CORPORATION & AFFILIATES
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,11 +29,14 @@ from torch import nn
 from torch.utils.data import ConcatDataset, Dataset, DistributedSampler, RandomSampler, Sampler
 from transformers import PreTrainedModel, Trainer
 from transformers.modeling_utils import unwrap_model
-from transformers.trainer import ALL_LAYERNORM_LAYERS  # ShardedDDPOption,
+try:
+    from transformers.trainer import ALL_LAYERNORM_LAYERS
+except ImportError:
+    from transformers.pytorch_utils import ALL_LAYERNORM_LAYERS  # ShardedDDPOption,
 from transformers.trainer import get_parameter_names, has_length, is_sagemaker_mp_enabled, logger
 
-from ..train.sequence_parallel import get_pg_manager
-from ...trl.trainer import DPOTrainer
+from llava.train.sequence_parallel import get_pg_manager
+from llava.trl.trainer import DPOTrainer
 
 
 def maybe_zero_3(param, ignore_status=False, name=None):

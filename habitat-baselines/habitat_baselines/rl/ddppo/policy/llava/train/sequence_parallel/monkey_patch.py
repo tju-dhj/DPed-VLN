@@ -1,3 +1,4 @@
+from __future__ import annotations
 # Copyright 2024 NVIDIA CORPORATION & AFFILIATES
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,7 +28,7 @@ from transformers import LlamaConfig
 from transformers.modeling_outputs import BaseModelOutputWithPast
 from transformers.models.llama.modeling_llama import LlamaAttention, _get_unpad_data, apply_rotary_pos_emb
 
-from ..train.sequence_parallel.globals import get_pg_manager, get_ring_sp_pg, get_ring_type, get_ulysses_sp_pg
+from llava.train.sequence_parallel.globals import get_pg_manager, get_ring_sp_pg, get_ring_type, get_ulysses_sp_pg
 
 from .hybrid_attn import HybridAttention
 from .ring import (

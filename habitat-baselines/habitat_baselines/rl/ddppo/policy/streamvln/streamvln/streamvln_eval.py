@@ -329,7 +329,14 @@ class VLNEvaluator:
                             if key in ['images', 'depths', 'poses', 'intrinsics']:
                                 input_dict[key] = input_dict[key].to(torch.bfloat16)
                         
-                        outputs = self.model.generate(**input_dict, do_sample=False, num_beams=1, max_new_tokens=10000, use_cache=True, return_dict_in_generate=True, past_key_values=past_key_values)
+                        try:
+                            outputs = self.model.generate(**input_dict, do_sample=False, num_beams=1, max_new_tokens=10000, use_cache=True, return_dict_in_generate=True, past_key_values=past_key_values)
+                        except torch.cuda.OutOfMemoryError as e:
+                            torch.cuda.empty_cache()
+                            raise RuntimeError(
+                                f"CUDA OOM during evaluation (scene {scene_id}, episode {episode_id}). "
+                                f"Stopping evaluation to prevent data corruption."
+                            ) from e
                         
                         output_ids = outputs.sequences
                         past_key_values = outputs.past_key_values

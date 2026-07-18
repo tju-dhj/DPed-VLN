@@ -1,3 +1,4 @@
+from __future__ import annotations
 # Copyright 2024 NVIDIA CORPORATION & AFFILIATES
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,8 +22,8 @@ from unittest import mock
 import deepspeed.comm as dist
 from llama_dpsp_attn_monkey_patch import __init__, _flash_attention_forward, initialize_sequence_parallel
 
-from ..train.train import train
-from ..train.transformer_normalize_monkey_patch import patched_normalize
+from llava.train.train import train
+from llava.train.transformer_normalize_monkey_patch import patched_normalize
 
 
 def __len__(self):

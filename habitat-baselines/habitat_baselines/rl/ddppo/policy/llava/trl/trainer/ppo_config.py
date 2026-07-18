@@ -22,7 +22,7 @@ import numpy as np
 import tyro
 from typing_extensions import Annotated
 
-from ...trl.trainer.utils import exact_div
+from llava.trl.trainer.utils import exact_div
 
 from ..core import flatten_dict
 from ..import_utils import is_wandb_available

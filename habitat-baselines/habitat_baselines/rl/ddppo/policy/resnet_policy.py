@@ -1204,6 +1204,9 @@ class ResNetCLIPTextEncoder(nn.Module):
                             # 尝试使用HuggingFace名称
                             self.clip_model, preprocess = longclip_load("LongCLIP-L", device=device)
                             print(f"[ResNetCLIPTextEncoder] Using LongCLIP-L from HuggingFace/cache")
+                        # LongCLIP checkpoint 使用 fp16 保存，转换为 fp32 以匹配 Habitat 的 fp32 输入
+                        self.clip_model = self.clip_model.float()
+                        print(f"[ResNetCLIPTextEncoder] LongCLIP model converted to float32")
                         self.use_long_clip = True
                     except Exception as e:
                         print(f"[ResNetCLIPTextEncoder] LongCLIP loading failed: {e}")
@@ -1239,23 +1242,25 @@ class ResNetCLIPTextEncoder(nn.Module):
                 ]
             )
 
-            # 统一视觉输出维度为2048
-            if self.rgb and self.depth:
-                self.visual_encoder.attnpool = nn.Identity()
-                visual_output_dim = 2048
-            elif pooling == "none":
-                self.visual_encoder.attnpool = nn.Identity()
-                visual_output_dim = 2048
-            elif pooling == "avgpool":
-                self.visual_encoder.attnpool = nn.Sequential(
-                    nn.AdaptiveAvgPool2d(output_size=(1, 1)), nn.Flatten()
-                )
-                visual_output_dim = 2048
+            # 统一视觉输出维度 - 从模型推断实际维度
+            # CLIP RN50: 1024 (或 2048 不经过 attnpool)
+            # LongCLIP-L (ViT-L/14): 768
+            # LongCLIP-B (ViT-B/16): 512
+            self._actual_text_dim = self.clip_model.text_projection.shape[1]
+            # 获取视觉输出维度（尝试多个可能的属性）
+            if hasattr(self.visual_encoder, 'output_dim'):
+                self._actual_visual_dim = self.visual_encoder.output_dim
+            elif hasattr(self.visual_encoder, 'proj'):
+                self._actual_visual_dim = self.visual_encoder.proj.shape[1]
             else:
-                visual_output_dim = 2048  # 统一使用2048维
+                # 回退：使用 text_dim（ViT架构下两者相同）
+                self._actual_visual_dim = self._actual_text_dim
+            visual_output_dim = self._actual_visual_dim
+            print(f"[ResNetCLIPTextEncoder] Detected text_dim={self._actual_text_dim}, visual_dim={self._actual_visual_dim}")
 
-            # 文本特征投影层 - 将CLIP文本特征从1024维投影到2048维
-            self.text_projection = nn.Linear(1024, visual_output_dim)
+            # 文本特征投影层 - 将CLIP文本特征投影到视觉维度
+            # RN50: 1024 -> 2048 (或1024); ViT-L/14: 768 -> 768; ViT-B/16: 512 -> 512
+            self.text_projection = nn.Linear(self._actual_text_dim, visual_output_dim)
             self.text_projection = self.text_projection.to(device)
             
             # 确保投影层可训练
@@ -1374,48 +1379,107 @@ class ResNetCLIPTextEncoder(nn.Module):
         return [self._decode_instruction_array(row) for row in instruction_np]
 
     def encode_text(self, text_instructions):
-        """编码文本指令"""
+        """编码文本指令（带缓存：CLIP backbone frozen，缓存原始特征；每步重跑 text_projection）"""
         if text_instructions is None:
             return None
-        
+
         # 处理空列表或空字符串的情况
         if isinstance(text_instructions, list) and len(text_instructions) == 0:
             return None
-        
+
         if isinstance(text_instructions, list) and len(text_instructions) > 0:
             # 过滤掉空字符串
             text_instructions = [inst for inst in text_instructions if inst and len(inst.strip()) > 0]
             if len(text_instructions) == 0:
                 return None
-        
-        # 使用CLIP的文本编码器
-        with torch.no_grad():
-            device = next(self.clip_model.parameters()).device
 
-            # 根据模型类型选择tokenizer
-            if self.use_long_clip:
-                # Long-CLIP tokenizer，支持248 tokens
-                from longclip import tokenize as longclip_tokenize
-                text_tokens = longclip_tokenize(text_instructions).to(device)
+        # 初始化缓存和统计计数器
+        if not hasattr(self, '_text_feature_cache'):
+            self._text_feature_cache = {}
+            self._cache_stats = {"hits": 0, "misses": 0, "encodes": 0}
+            self._last_inst_fingerprints = [None] * len(text_instructions)
+            self._step_counter = 0
+
+        self._step_counter += 1
+        batch_size = len(text_instructions)
+
+        # 检查哪些指令需要编码
+        raw_features = []  # 未投影的 CLIP 特征
+        need_encode_indices = []
+        need_encode_texts = []
+        inst_changed_envs = []  # 追踪哪些 env 的指令变了
+
+        for i, inst in enumerate(text_instructions):
+            cache_key = inst  # 用指令字符串作为缓存键
+            # 用 hash 检查指令是否与上一步相同（追踪 episode 切换）
+            inst_hash = hash(cache_key) if cache_key else None
+            if i < len(self._last_inst_fingerprints):
+                if self._last_inst_fingerprints[i] != inst_hash:
+                    inst_changed_envs.append(i)
+                self._last_inst_fingerprints[i] = inst_hash
+            elif i >= len(self._last_inst_fingerprints):
+                # batch size 变化时扩展
+                self._last_inst_fingerprints.extend([None] * (i - len(self._last_inst_fingerprints) + 1))
+                self._last_inst_fingerprints[i] = inst_hash
+                inst_changed_envs.append(i)
+
+            if cache_key in self._text_feature_cache:
+                raw_features.append(self._text_feature_cache[cache_key])
+                self._cache_stats["hits"] += 1
             else:
-                # 标准CLIP tokenizer，最大77 tokens
-                text_tokens = clip.tokenize(text_instructions, truncate=True).to(device)
+                need_encode_indices.append(i)
+                need_encode_texts.append(inst)
+                raw_features.append(None)  # 占位
+                self._cache_stats["misses"] += 1
 
-            text_features = self.text_encoder(text_tokens)
-            
-        # 确保数据类型匹配
-        text_features = text_features.float()
-        
-        # 投影到视觉特征维度
-        text_features = self.text_projection(text_features)
-        
+        # 对新指令批量编码（CLIP backbone: 冻结, 重量级操作）
+        if len(need_encode_texts) > 0:
+            with torch.no_grad():
+                device = next(self.clip_model.parameters()).device
+
+                if self.use_long_clip:
+                    from longclip import tokenize as longclip_tokenize
+                    text_tokens = longclip_tokenize(need_encode_texts).to(device)
+                else:
+                    text_tokens = clip.tokenize(need_encode_texts, truncate=True).to(device)
+
+                new_features = self.text_encoder(text_tokens).float()
+
+            # 存入缓存
+            for j, (idx, inst) in enumerate(zip(need_encode_indices, need_encode_texts)):
+                feat = new_features[j:j+1]
+                self._text_feature_cache[inst] = feat
+                raw_features[idx] = feat
+            self._cache_stats["encodes"] += len(need_encode_texts)
+
+        # 每 500 步打印缓存统计 (已禁用)
+        # if self._step_counter % 500 == 1 and self._step_counter > 1:
+        #     stats = self._cache_stats
+        #     total = stats["hits"] + stats["misses"]
+        #     hit_rate = stats["hits"] / total * 100 if total > 0 else 0
+        #     print(f"[TextCache] step={self._step_counter} | "
+        #           f"cache_size={len(self._text_feature_cache)} | "
+        #           f"hits={stats['hits']} misses={stats['misses']} encodes={stats['encodes']} | "
+        #           f"hit_rate={hit_rate:.1f}%")
+
+        # episode 切换时打印（已禁用）
+        # if len(inst_changed_envs) > 0 and getattr(self, "_debug_input_print_count", 0) < 10:
+        #     print(f"[TextCache] Episode transition detected: "
+        #           f"envs={inst_changed_envs} | "
+        #           f"cache_size={len(self._text_feature_cache)} | "
+        #           f"new_encodes={len(need_encode_texts)}")
+
+        # 拼接原始特征并投影（text_projection: 可训练, 轻量级操作）
+        raw_features = torch.cat(raw_features, dim=0)  # [B, text_dim]
+        text_features = self.text_projection(raw_features)
+
         return text_features
 
     def forward(self, observations: Dict[str, torch.Tensor], episode_ids: List[str] = None) -> torch.Tensor:
         if self.is_blind:
             return None
-
-        debug_enabled = getattr(self, "_debug_input_print_count", 0) < 10
+        #  debug_enabled = getattr(self, "_debug_input_print_count", 0) < 10
+        debug_enabled = False  # 禁用调试输出
         if debug_enabled:
             print("[ResNetCLIPTextEncoder DEBUG] ===== forward input summary (step {}) =====".format(
                 getattr(self, "_debug_input_print_count", 0)))
@@ -1638,7 +1702,7 @@ class ResNetCLIPTextEncoder(nn.Module):
                 f"[ResNetCLIPTextEncoder DEBUG] visual_features final "
                 f"shape={tuple(visual_features.shape)} dtype={visual_features.dtype} device={visual_features.device}"
             )
-            self._debug_input_print_count += 1
+            # self._debug_input_print_count += 1  # 已禁用计数
 
         # 处理文本指令 - 优先从observations中获取
         # 注意：仅在使用CLIP架构（backbone包含"resnet50_clip"）时才会有文本处理功能
@@ -1729,10 +1793,10 @@ class ResNetCLIPTextEncoder(nn.Module):
 
         self._last_instruction = text_instructions
 
-        # DEBUG: Print decoded instruction
-        if hasattr(self, "_debug_input_print_count") and self._debug_input_print_count < 10:
-            print(f"[ResNetCLIPTextEncoder DEBUG] decoded instruction: [{text_instructions}]")
-            print(f"[ResNetCLIPTextEncoder DEBUG] instruction changed since last step: {instruction_changed}")
+        # DEBUG: Print decoded instruction (已禁用)
+        # if hasattr(self, "_debug_input_print_count") and self._debug_input_print_count < 10:
+        #     print(f"[ResNetCLIPTextEncoder DEBUG] decoded instruction: [{text_instructions}]")
+        #     print(f"[ResNetCLIPTextEncoder DEBUG] instruction changed since last step: {instruction_changed}")
 
         # 编码文本指令
         text_features = self.encode_text(text_instructions)

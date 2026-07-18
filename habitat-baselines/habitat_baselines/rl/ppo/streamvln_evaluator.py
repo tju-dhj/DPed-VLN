@@ -298,6 +298,100 @@ def extract_streamvln_instruction(
     return "Navigate to the goal location"
 
 
+def _get_eval_resume_path(config) -> str:
+    """Get the path for the eval resume checkpoint file."""
+    checkpoint_folder = config.habitat_baselines.checkpoint_folder
+    split = config.habitat.dataset.split
+    return os.path.join(checkpoint_folder, f"eval_resume_{split}.json")
+
+
+def _load_eval_resume(config) -> tuple:
+    """Load eval resume state if it exists.
+
+    Returns (stats_episodes, ep_eval_count, total_completed).
+    """
+    resume_path = _get_eval_resume_path(config)
+    if os.path.exists(resume_path):
+        logger.info(f"Loading eval resume state from {resume_path}")
+        with open(resume_path, "r") as f:
+            data = json.load(f)
+        stats_episodes: Dict[Any, Any] = {}
+        for k, v in data.get("stats_episodes", {}).items():
+            parts = k.split("|||")
+            if len(parts) == 3:
+                scene_id, episode_id, eval_count = parts[0], int(parts[1]), int(parts[2])
+                stats_episodes[((scene_id, episode_id), eval_count)] = v
+        ep_eval_count: Dict[Any, int] = defaultdict(lambda: 0)
+        for k, v in data.get("ep_eval_count", {}).items():
+            parts = k.split("|||")
+            if len(parts) == 2:
+                scene_id, episode_id = parts[0], int(parts[1])
+                ep_eval_count[(scene_id, episode_id)] = v
+        total_completed = len(stats_episodes)
+        logger.info(
+            f"Resumed {total_completed} completed episodes from eval checkpoint"
+        )
+        return stats_episodes, ep_eval_count, total_completed
+    return {}, defaultdict(lambda: 0), 0
+
+
+def _safe_convert(val: Any) -> Any:
+    """Convert numpy/torch types to JSON-serializable Python types."""
+    if isinstance(val, (np.floating,)):
+        return float(val)
+    if isinstance(val, (np.integer,)):
+        return int(val)
+    if isinstance(val, (np.bool_,)):
+        return bool(val)
+    if isinstance(val, np.ndarray):
+        return val.tolist()
+    if isinstance(val, (torch.Tensor,)):
+        return val.item() if val.numel() == 1 else val.tolist()
+    return val
+
+
+def _save_eval_resume(config, stats_episodes, ep_eval_count) -> None:
+    """Save eval resume state to disk.
+
+    stats_episodes and ep_eval_count must already contain JSON-serializable
+    types (Python float/int/bool/str/list/dict).  OOM here would only come
+    from the json.dump itself, not from type conversion.
+    """
+    resume_path = _get_eval_resume_path(config)
+    abs_resume_path = os.path.abspath(resume_path)
+    os.makedirs(os.path.dirname(abs_resume_path), exist_ok=True)
+
+    serializable_stats: Dict[str, Any] = {}
+    for (ep_key, eval_count), v in stats_episodes.items():
+        scene_id, episode_id = ep_key
+        key = f"{scene_id}|||{episode_id}|||{eval_count}"
+        serializable_stats[key] = v  # already serializable
+    serializable_counts: Dict[str, int] = {}
+    for (scene_id, episode_id), v in ep_eval_count.items():
+        key = f"{scene_id}|||{episode_id}"
+        serializable_counts[key] = int(v)
+    data = {
+        "stats_episodes": serializable_stats,
+        "ep_eval_count": serializable_counts,
+        "total_completed": len(stats_episodes),
+    }
+    tmp_path = abs_resume_path + f".{os.getpid()}.tmp"
+    try:
+        with open(tmp_path, "w") as f:
+            json.dump(data, f, indent=2)
+        os.replace(tmp_path, abs_resume_path)  # atomic on POSIX
+        logger.info(
+            f"[eval resume] Saved {len(stats_episodes)} episodes to {abs_resume_path}"
+        )
+    except Exception as e:
+        logger.error(f"[eval resume] Failed to save resume state: {e}")
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+
+
 class StreamVLNEvaluator(FALCONEvaluator):
     """
     StreamVLN专用评估器
@@ -416,10 +510,13 @@ class StreamVLNEvaluator(FALCONEvaluator):
         batch = apply_obs_transforms_batch(batch, obs_transforms)
         
         current_episode_reward = torch.zeros(envs.num_envs, 1, device="cpu")
-        
-        stats_episodes: Dict[Any, Any] = {}
-        ep_eval_count: Dict[Any, int] = defaultdict(lambda: 0)
-        
+
+        stats_episodes, ep_eval_count, total_completed = _load_eval_resume(config)
+        # Recompute success_cal from loaded stats for accurate rate display
+        success_cal = sum(
+            float(v.get("success", 0.0)) for v in stats_episodes.values()
+        )
+
         # 动作队列（每个环境一个）
         action_queues = [[] for _ in range(envs.num_envs)]
         streamvln_step_debug: List[Optional[Dict[str, Any]]] = [None for _ in range(envs.num_envs)]
@@ -454,7 +551,7 @@ class StreamVLNEvaluator(FALCONEvaluator):
             "You must specify a number of evaluation episodes with test_episode_count"
         )
         
-        pbar = tqdm.tqdm(total=number_of_eval_episodes * evals_per_ep)
+        pbar = tqdm.tqdm(total=number_of_eval_episodes * evals_per_ep, initial=total_completed)
         actions_record = defaultdict(list)
         max_episode_steps = getattr(
             config.habitat_baselines.eval, "max_steps_per_episode", -1
@@ -472,7 +569,44 @@ class StreamVLNEvaluator(FALCONEvaluator):
             config.habitat_baselines.eval, "clear_cache_on_episode_end", True
         )  # episode结束时清理缓存
         step_count = 0
-        
+
+        # Fast-forward through already-completed episodes for eval resume
+        if total_completed > 0:
+            logger.info(
+                f"Fast-forwarding through {total_completed} already-completed episodes..."
+            )
+            # Compute total action dimension for skip loop
+            from gym import spaces as _spaces
+            _action_space_lens = self._target_agent.actor_critic.policy_action_space_shape_lens
+            _total_act_dim = sum(
+                int(np.prod(space.shape)) if isinstance(space, _spaces.Box)
+                else 1 if isinstance(space, _spaces.Discrete)
+                else int(space) if isinstance(space, (int, np.integer))
+                else 1
+                for space in _action_space_lens
+            )
+            skipped = 0
+            while skipped < total_completed:
+                stop_actions = np.zeros(
+                    (envs.num_envs, _total_act_dim), dtype=np.float32
+                )
+                outputs = envs.step(
+                    [stop_actions[i] for i in range(envs.num_envs)]
+                )
+                _, _, dones, _ = [list(x) for x in zip(*outputs)]
+                for env_i in range(envs.num_envs):
+                    if dones[env_i]:
+                        skipped += 1
+            observations = envs.post_step(observations)
+            batch = batch_obs(observations, device=device)
+            batch = apply_obs_transforms_batch(batch, obs_transforms)
+            # Reset StreamVLN state after skipping to ensure clean start
+            streamvln_net.reset_episode_state()
+            logger.info(
+                f"Fast-forward complete ({skipped} episodes skipped), "
+                f"resuming evaluation from episode {total_completed + 1}"
+            )
+
         while (
             len(stats_episodes) < (number_of_eval_episodes * evals_per_ep)
             and envs.num_envs > 0
@@ -765,11 +899,17 @@ class StreamVLNEvaluator(FALCONEvaluator):
                     
                     episode_stats = {"reward": current_episode_reward[i].item()}
                     episode_stats.update(extract_scalars_from_info(infos[i]))
+                    # Convert to JSON-serializable types immediately so json.dump
+                    # in _save_eval_resume stays I/O-only and won't OOM.
+                    for stat_key in list(episode_stats):
+                        episode_stats[stat_key] = _safe_convert(episode_stats[stat_key])
                     current_episode_reward[i] = 0
                     k = (current_episodes_info[i].scene_id, current_episodes_info[i].episode_id)
                     ep_eval_count[k] += 1
                     stats_episodes[(k, ep_eval_count[k])] = episode_stats
-                    
+                    # Persist eval progress after each completed episode
+                    _save_eval_resume(config, stats_episodes, ep_eval_count)
+
                     # 重置该环境的队列和StreamVLN状态
                     action_queues[i] = []
                     streamvln_step_debug[i] = None
@@ -857,7 +997,10 @@ class StreamVLNEvaluator(FALCONEvaluator):
                 )
         
         pbar.close()
-        
+
+        # Final eval resume save after all episodes complete
+        _save_eval_resume(config, stats_episodes, ep_eval_count)
+
         # 最终清理内存
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
@@ -1044,9 +1187,42 @@ class StreamVLNEvaluator(FALCONEvaluator):
             
             return action, debug_info
             
+        except torch.cuda.OutOfMemoryError as e:
+            # OOM 时 fallback：先释放 GPU 上残留的半成品分配，
+            # 再重置该 env 的模型缓存（KV cache 等），避免下次又因碎片 OOM
+            import gc
+            for _name in ("rgb_np", "depth_np", "llm_output", "action_seq"):
+                _obj = locals().get(_name)
+                if _obj is not None:
+                    del _obj
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            try:
+                streamvln_net.model.reset_for_env(env_idx)
+            except Exception as reset_err:
+                logger.warning(
+                    "StreamVLN reset_for_env(%d) after OOM failed: %s",
+                    env_idx, reset_err,
+                )
+            logger.warning(
+                "StreamVLN CUDA OOM (env %d): %s -- reset cache, fallback MOVE_FORWARD",
+                env_idx, e,
+            )
+            action = 1  # MOVE_FORWARD
+            debug_info = {
+                "instruction": instruction,
+                "model_output": f"CUDA OOM: {str(e)}",
+                "action_id": int(action),
+                "action_name": self.ACTION_ID_TO_NAME.get(action, f"action_{action}"),
+                "repeats": 1,
+                "repeat_index": 1,
+                "from_queue": False,
+            }
+            return action, debug_info
         except Exception as e:
+            # 非 OOM 错误 fallback，继续 eval
             logger.warning(f"StreamVLN action generation failed: {e}")
-            # 回退：使用默认动作
             action = 1  # MOVE_FORWARD
             debug_info = {
                 "instruction": instruction,

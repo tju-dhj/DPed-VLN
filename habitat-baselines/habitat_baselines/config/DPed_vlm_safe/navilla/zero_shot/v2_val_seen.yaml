@@ -1,0 +1,513 @@
+# @package _global_
+# NaVILA Zero-Shot Eval v2 val_seen (动态行人)
+
+defaults:
+  - /benchmark/nav/socialnav_v2: falcon_hm3d_task
+  - /habitat_baselines: habitat_baselines_rl_config_base
+  - /habitat/simulator/sim_sensors@habitat_baselines.eval.extra_sim_sensors.third_rgb_sensor: third_rgb_sensor
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_1: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_2: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_3: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_4: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_5: single_fixed
+  - /habitat_baselines/rl/policy@habitat_baselines.rl.policy.agent_6: single_fixed
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_stop: discrete_stop
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_move_forward: discrete_move_forward
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_turn_left: discrete_turn_left
+  - /habitat/task/actions@habitat.task.actions.agent_0_discrete_turn_right: discrete_turn_right
+  - /habitat/task/actions@habitat.task.actions.agent_1_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+  - /habitat/task/actions@habitat.task.actions.agent_2_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+  - /habitat/task/actions@habitat.task.actions.agent_3_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+  - /habitat/task/actions@habitat.task.actions.agent_4_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+  - /habitat/task/actions@habitat.task.actions.agent_5_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+  - /habitat/task/actions@habitat.task.actions.agent_6_oracle_nav_randcoord_action_obstacle: oracle_nav_action
+  - /habitat/task/lab_sensors@habitat.task.lab_sensors.agent_0_pointgoal_with_gps_compass: pointgoal_with_gps_compass_sensor
+  - _self_
+
+habitat:
+  dataset:
+    type: "DynamicVLNCE-v2"
+    split: val_seen
+    data_path: "/share/home/u19666033/dhj/dped-vln/DPed_VLN/data_sets/v2/val_seen/{scene}.json.gz"
+    scenes_dir: "/share/home/u19666033/dhj/DPed_pro/data/scene_datasets/hm3d"
+    content_scenes:
+      - 1EiJpeRNEs1.json
+      - 1K7P6ZQS4VM.json
+      - 1SedVoP7zLu.json
+      - 1W61QJVDBqe.json
+      - 1hovphK64XQ.json
+      - 1k479icNeHW.json
+      - 1sM6KvYg3J5.json
+      - 2NwLiyeKcrK.json
+      - 2XVvKEDd54w.json
+      - 2ihrkjrbHVf.json
+      - 2tqbn5VLQoq.json
+      - 33ypawbKCQf.json
+      - 3Ao63EY7J83.json
+      - 3XYAD64HpDr.json
+      - 3Y14etT7365.json
+      - 3goH1WRaCYC.json
+      - 3iZkJUc7KhX.json
+      - 3z5dc2yzyCb.json
+      - 4GfZ9TTZUwL.json
+      - 4J8N2Ah1a6o.json
+      - 4RuxhXRmb3V.json
+      - 4dbCzNN5L5t.json
+      - 4dtmWCb8CDk.json
+      - 4tdJ3qe1x7P.json
+      - 4wCTuaUNWEd.json
+      - 5737gQA9p2T.json
+      - 5RtSdesLuHt.json
+      - 5cdEh9F2hJL.json
+      - 5jLhtVmWd5F.json
+      - 5m6t1y5EvsT.json
+      - 5uXtMs57HmZ.json
+      - 5vUupbRRdyH.json
+      - 6AGcGQf2wof.json
+      - 6HMiy15cxis.json
+      - 6TPCFES8fhh.json
+      - 6YtDG3FhNvx.json
+      - 6acdNdTjNbr.json
+      - 6qJyEsZNuey.json
+      - 6vJMULqvYe8.json
+      - 741Fdj7NLF9.json
+      - 7CXbc73tDRf.json
+      - 7dmR22gwQpH.json
+      - 812QqCky3T7.json
+      - 8CRYizAb6yd.json
+      - 8EqKbkhqE4R.json
+      - 8iCxzGNmp4g.json
+      - 8m2Sk2sC3DR.json
+      - 8uSpPmctPXC.json
+      - 8wJuSPJ9FXG.json
+      - 92vYG1q49FY.json
+      - 9DnDAhJ7qcj.json
+      - 9SpHCfHaNiG.json
+      - 9h5JJxM6E5S.json
+      - A9yB3w3UxXV.json
+      - ANmWrL7Kz7h.json
+      - AUkcTmUs8mw.json
+      - AeBfp3hTadB.json
+      - AfKhsVmG8L4.json
+      - Am8wmPcBmtN.json
+      - AqGu9nUng3L.json
+      - BCWtGkh8CHv.json
+      - BEuB32yj7Fb.json
+      - BHXhpBwSMLh.json
+      - BW1f54ZNVW6.json
+      - BfzKZxFShtq.json
+      - BqLwEyiLbza.json
+      - C3ifY177Ldq.json
+      - C5RbHBQ76DE.json
+      - C7xtw9uhYFn.json
+      - C8VQQtzUoqV.json
+      - CFVBbU9Rsyb.json
+      - CQWES1bawee.json
+      - D2PqRE5ZvyQ.json
+      - DBjEcHFg4oq.json
+      - Dd4bFSTQ8gi.json
+      - Dj6sJyU7qmd.json
+      - FxCkHAfgh7A.json
+      - GCCrNuhZ9WY.json
+      - GNGYKt8XrjF.json
+      - GfF9TQ34x37.json
+      - GsQBY83r3hb.json
+      - H7bBanejcc6.json
+      - HMkoS756sz6.json
+      - HPrcqBkKzuy.json
+      - HZ2iMMBsBQ9.json
+      - JY8e73x9ubE.json
+      - KHhgcNqsc9h.json
+      - L5QEsaVqwrY.json
+      - LLecyBe5Eq2.json
+      - LVgQNuK8vtv.json
+      - M8PMwoYQTUV.json
+      - MHYu4LWb6qP.json
+      - Mre6deDcPCP.json
+      - MyxM6trMBUH.json
+      - NBuk4gePdJm.json
+      - NieWWMV6tE4.json
+      - NpCFg9NdUgL.json
+      - NwG7cpZnRZb.json
+      - P3hmFK6Ejnf.json
+      - PFLHHbjscNN.json
+      - PPTLa8SkUfo.json
+      - Pmv1pdeirDT.json
+      - QDtpZSqaeyW.json
+      - QFjJExB2jgE.json
+      - QHhQZWdMpGJ.json
+      - QaLdnwvtxbs.json
+      - Qkm4CooNoPi.json
+      - Qpor2mEya8F.json
+      - QxfX5te1gFu.json
+      - R6Byftz8wRN.json
+      - RcuYAHzrjK7.json
+      - RiwBKy2YdQ7.json
+      - S3YyrKoJ7k6.json
+      - S7uMvxjBVZq.json
+      - S9M7ybC5ZHu.json
+      - SA759ShSs44.json
+      - SAZ4gvMfxm1.json
+      - SBHLgvFTVMZ.json
+      - SByzJLxpRGn.json
+      - SSbSnMigayt.json
+      - SUHsP6z2gcJ.json
+      - SgkmkWjjmDJ.json
+      - T4G9hTR5WSv.json
+      - TBdN234fGEb.json
+      - TNx8nti6GNi.json
+      - TSJmdttd2GV.json
+      - TiWanpmC63V.json
+      - Ty7djLDxQu3.json
+      - TzQLNfWugiZ.json
+      - TziyvKgzdAs.json
+      - U8F9SkAsqbJ.json
+      - UZ5rYGiwQgW.json
+      - UbsJXeCkJBA.json
+      - UfhK7KNBg5u.json
+      - Umx6CdjZfvy.json
+      - VKmpsujnc5t.json
+      - VWczCD1Hbus.json
+      - VYnUX657cVo.json
+      - VoVGtfYrpuQ.json
+      - W16Bm4ysK8v.json
+      - W3J8ruZTQic.json
+      - WPzCkWEorzk.json
+      - WRphMcFxfhe.json
+      - WT4QWwXrMzs.json
+      - WZDzPCybQvS.json
+      - WhNyDTnd9g5.json
+      - Wo6kuutE9i7.json
+      - XNeHsjL6nBB.json
+      - XNiSi1YgPRR.json
+      - XRHpoTZjtj7.json
+      - XYQdAu1qsK9.json
+      - Xfhi9GYbhqD.json
+      - XokRUNE3gB1.json
+      - Xuky7E5df6A.json
+      - Y4L8fjz2yH7.json
+      - Y4idBN66BqG.json
+      - Y6WjWkVEUks.json
+      - YGc1h9nNrJP.json
+      - YJDUB7hWg9h.json
+      - YMNvYDhK8mB.json
+      - YRUkbU5xsYj.json
+      - YWy9hV7RfQB.json
+      - YmEfzspXX5h.json
+      - Yr35Q49vqwV.json
+      - ZNanfzgCdm3.json
+      - ZVPMj4YoZtK.json
+      - Ze6tkhg7Wvc.json
+      - aCtdWA5n56Z.json
+      - aJg466zMSNt.json
+      - aRKASs4e8j1.json
+      - amdKHm5GAM1.json
+      - aqx6EomMgTf.json
+      - auFeVz9Go4m.json
+      - b2e31HFFizw.json
+      - b3CuYvwpzZv.json
+      - b3WpMbPFB6q.json
+      - bAdy4hKf1a1.json
+      - bEdki9cbHDG.json
+      - bHKTDQFJxTw.json
+      - boJrpwDQtu9.json
+      - bpqKLXHnxei.json
+      - by8SK9u18S8.json
+      - c6TFyURFrL4.json
+      - c9DeZf2fcDf.json
+      - cFqWyQ4Y9hT.json
+      - cWfRoQnzNiM.json
+      - cYkrGrCg2kB.json
+      - d5faFfQRphr.json
+      - d6bYiL1d9Fh.json
+      - d88Sc1udFcZ.json
+      - dD37vuCa4FE.json
+      - dKySjDYsya1.json
+      - dNASL765WSN.json
+      - dcd823nTKH9.json
+      - drvaU627cQh.json
+      - e3YKRHQRPNe.json
+      - eAUmfFLZDR3.json
+      - eF36g7L6Z9M.json
+      - eUJx9a4u63E.json
+      - eWKqgQbVZow.json
+      - eZrc5fLTCmi.json
+      - erfqyP5V4u6.json
+      - f93a9wrxRjG.json
+      - fJ1GEE6PdHD.json
+      - fKP4sxcoxpL.json
+      - fQHGxvurx9L.json
+      - fc7RfUCN5mY.json
+      - fdfRpE6Cfsr.json
+      - frThKkhTwFT.json
+      - g7hUFVNac26.json
+      - g8Xrdbe9fir.json
+      - gPf8XzHACGn.json
+      - gUqgeUmUagL.json
+      - gamLwhSzHci.json
+      - ggNAcMh8JPT.json
+      - ghWQ5kHV97i.json
+      - gmuS7Wgsbrx.json
+      - gyK27yu7CP4.json
+      - h5VYFcePkbn.json
+      - h6nwVLpAKQz.json
+      - hTTnuAeSN6d.json
+      - hbr5fTQhAAa.json
+      - iLDo95ZbDJq.json
+      - iePHCSf119p.json
+      - ixTj1aTMup2.json
+      - j2EJhFEQGCL.json
+      - j2Nms3h9XJv.json
+      - j6fHrce9pHR.json
+      - jAzZDvf6i67.json
+      - janiYDpzM9j.json
+      - k7mcxHG65Wh.json
+      - k9UfRPqLm3j.json
+      - kA2nG18hCAr.json
+      - kAMF2R7PCqX.json
+      - kCHmLFfMDuE.json
+      - kDgLKdMd5X8.json
+      - kEL17iFsVbw.json
+      - kHvNo8x6Qoe.json
+      - kJJyRFXVpx2.json
+      - kJxT5qssH4H.json
+      - kZhZfAhdnNN.json
+      - kdFEfVoT1WE.json
+      - kfPV7w3FaU5.json
+      - kuxpR2xHUBa.json
+      - mHJxL9jnCox.json
+      - mHXUEKEV6gR.json
+      - mjvN6RDLsPm.json
+      - mkvHBa3mEEk.json
+      - n8AnEznQQpv.json
+      - nACV8wLu1u5.json
+      - nS8T59Aw3sf.json
+      - nicaPonCxvC.json
+      - nzuiinFMXvf.json
+      - o1F5JVHc6mb.json
+      - o4tckGBtaxz.json
+      - oXzJVhUhmYe.json
+      - oahi4u45xMf.json
+      - otTm4oTrHvc.json
+      - p32JzpQyhPk.json
+      - p4ZPcGtk6Ex.json
+      - p6RF8AUer2e.json
+      - pUneSGJDrvY.json
+      - panm7DRsmDn.json
+      - pmZMJfFd3Jy.json
+      - q28T9C3q2dv.json
+      - q9CAdKfvar2.json
+      - qAwGYe2GoZp.json
+      - qgZhhx1MpTi.json
+      - qk9eeNeR4vw.json
+      - qnKYFQsjnHf.json
+      - qpcpnP8TosR.json
+      - qvNra81N8BU.json
+      - qxwfVS8MQ67.json
+      - qz3829g1Lzf.json
+      - rBmEe6ab5VP.json
+      - rK4jPRTUw15.json
+      - rPwrKEnR3fk.json
+      - reHtN7VMWkg.json
+      - rsggHU7g7dh.json
+      - s19Uyn7AWwv.json
+      - s7kPJndncRy.json
+      - sNikFfBW8zM.json
+      - sWAdxSLVPQC.json
+      - sfbj7jspYWj.json
+      - t85xiAt9pao.json
+      - t8wCA6Qe8uT.json
+      - tAQTHnJ7n72.json
+      - tEafuWwhhwr.json
+      - tJ7XVoEN82a.json
+      - tL6i2PtktSh.json
+      - tTcuEfoAQXv.json
+      - tYvWp85L81G.json
+      - tzaZQQmUVXZ.json
+      - u5atqC7vRCY.json
+      - uc8QkFS11Hj.json
+      - udze1CSof5C.json
+      - uhkqDVMtEnn.json
+      - v3tsKAPVLJS.json
+      - v46TaF2rxHK.json
+      - vDfkYo5VqEQ.json
+      - vPoFkhqsJaf.json
+      - vj4rZPfVjBQ.json
+      - vjMVcmpC1hC.json
+      - w5YEujJKsiy.json
+      - w7QyjJ3H9Bp.json
+      - wDDRygUCLMm.json
+      - wFCLkVy4n9U.json
+      - wtaQdtXzYtD.json
+      - wuKkTq5GJbi.json
+      - x1pTUWx9DPr.json
+      - x4LVLSsYWcV.json
+      - xAHnY3QzFUN.json
+      - xGnehmjiCSA.json
+      - xWvSkKiWQpC.json
+      - xc2kFoo9nbw.json
+      - xcTV5UHYHFV.json
+      - xccdSFAEPau.json
+      - xp4FyfQ6Wr5.json
+      - xvDx98avcwd.json
+      - y9hTuugGdiq.json
+      - yHLr6bvWsVm.json
+      - yPKGKBCyYx8.json
+      - yQESfVcg18k.json
+      - yX5efd48dLf.json
+      - yZME6UR9dUN.json
+      - ytXtEYghmvL.json
+      - z9w4aD7JsiQ.json
+      - zCMdfYaW9iF.json
+      - zJ3fVx3BZYR.json
+      - zJEEFaNaRbB.json
+      - zepmXAdrpjR.json
+      - zhzot8MvSjF.json
+      - zmZvNTCxMZE.json
+  environment:
+    iterator_options:
+      shuffle: False
+    max_episode_steps: 500
+  gym:
+    obs_keys:
+      - agent_0_overhead_front_rgb
+      - agent_0_overhead_front_depth
+      - agent_0_pointgoal_with_gps_compass
+      - agent_0_starting_point_gps_compass
+      - agent_0_localization_sensor
+      - agent_0_human_num_sensor
+      - agent_0_oracle_humanoid_future_trajectory
+      - agent_0_falcon_instruction
+      - agent_0_falcon_gt_action
+  task:
+    measurements:
+      success:
+        type: Success
+        success_distance: 3.0
+    actions:
+      agent_0_discrete_stop:
+        lin_speed: 0.0
+        ang_speed: 0.0
+      agent_0_discrete_move_forward:
+        lin_speed: 30.0
+        ang_speed: 0.0
+        allow_dyn_slide: True
+      agent_0_discrete_turn_left:
+        lin_speed: 0.0
+        ang_speed: 31.415926535897
+        allow_dyn_slide: True
+      agent_0_discrete_turn_right:
+        lin_speed: 0.0
+        ang_speed: -31.415926535897
+        allow_dyn_slide: True
+      agent_1_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 30.0
+        ang_speed: 31.415926535897
+        allow_dyn_slide: True
+      agent_2_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 30.0
+        ang_speed: 31.415926535897
+        allow_dyn_slide: True
+      agent_3_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 30.0
+        ang_speed: 31.415926535897
+        allow_dyn_slide: True
+      agent_4_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 30.0
+        ang_speed: 31.415926535897
+        allow_dyn_slide: True
+      agent_5_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 30.0
+        ang_speed: 31.415926535897
+        allow_dyn_slide: True
+      agent_6_oracle_nav_randcoord_action_obstacle:
+        type: OracleNavRandCoordAction_Obstacle
+        motion_control: human_joints
+        lin_speed: 30.0
+        ang_speed: 31.415926535897
+        allow_dyn_slide: True
+
+habitat_baselines:
+  evaluate: True
+  verbose: True
+  trainer_name: "ddppo"
+  torch_gpu_id: 0
+  tensorboard_dir: "evaluation-vln-dpedpro2/navilla_zero_shot_v2_val_seen/hm3d/tb"
+  test_episode_count: -1
+  eval_ckpt_path_dir: "pretrained_model/navila_checkpoint"
+  num_environments: 1
+  checkpoint_folder: "evaluation-vln-dpedpro2/navilla_zero_shot_v2_val_seen/hm3d/checkpoints"
+  num_updates: -1
+  total_num_steps: 1e8
+  log_interval: 10
+  num_checkpoints: 200
+  force_torch_single_threaded: True
+  load_resume_state_config: False
+
+  evaluator:
+    _target_: habitat_baselines.rl.ppo.navila_evaluator.NaVILAEvaluator
+
+  eval:
+    use_ckpt_config: False
+    should_load_ckpt: False
+    max_steps_per_episode: 500
+
+  rl:
+    agent:
+      type: "MultiAgentAccessMgr"
+      num_agent_types: 7
+      num_active_agents_per_type: [1, 1, 1, 1, 1, 1, 1]
+      num_pool_agents_per_type: [1, 1, 1, 1, 1, 1, 1]
+      agent_sample_interval: 20
+      force_partner_sample_idx: -1
+    policy:
+      agent_0:
+        name: "NaVILAPolicy"
+        model_path: "pretrained_model/navila_checkpoint"
+        num_frames: 4
+        num_history: 8
+        num_future_steps: 4
+        model_max_length: 4096
+        device: "cuda"
+        action_distribution_type: "categorical"
+    ppo:
+      clip_param: 0.2
+      ppo_epoch: 2
+      num_mini_batch: 2
+      value_loss_coef: 0.5
+      entropy_coef: 0.01
+      lr: 2.5e-4
+      eps: 1e-5
+      max_grad_norm: 0.2
+      num_steps: 128
+      use_gae: True
+      gamma: 0.99
+      tau: 0.95
+      use_linear_clip_decay: False
+      use_linear_lr_decay: False
+      reward_window_size: 50
+      use_normalized_advantage: False
+      hidden_size: 1024
+      use_double_buffered_sampler: False
+
+    ddppo:
+      sync_frac: 0.6
+      distrib_backend: NCCL
+      force_distributed: False
+      pretrained: False
+      pretrained_encoder: False
+      train_encoder: False
+      reset_critic: True
+      backbone: "streamvln"
+      rnn_type: "GRU"
+      num_recurrent_layers: 1

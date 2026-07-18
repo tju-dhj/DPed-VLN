@@ -1,3 +1,4 @@
+from __future__ import annotations
 # Copyright (c) Microsoft Corporation.
 # SPDX-License-Identifier: Apache-2.0
 
@@ -10,7 +11,7 @@ import torch.distributed as dist
 from torch import Tensor
 from torch.nn import Module
 
-from ...train.sequence_parallel.globals import (
+from llava.train.sequence_parallel.globals import (
     get_ulysses_seq_len,
     get_ulysses_sp_pg,
     get_ulysses_sp_rank,

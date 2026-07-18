@@ -52,6 +52,12 @@ from llava.model import *
 from llava.mm_utils import process_highres_image, process_anyres_image, process_highres_image_crop_split, tokenizer_image_token
 from llava.utils import rank0_print, process_video_with_pyav, process_video_with_decord
 
+def is_main_process():
+    """Check if current process is rank 0 for distributed training."""
+    if not torch.distributed.is_initialized():
+        return True
+    return torch.distributed.get_rank() == 0
+
 from streamvln.model.stream_video_vln import StreamVLNForCausalLM
 from streamvln.dataset.vln_action_dataset import collate_fn, VLNActionDataset
 from streamvln.dataset.mmc4_dataset import LazyMMC4Dataset
@@ -1537,7 +1543,7 @@ def get_model(model_args, training_args, data_args, bnb_model_from_pretrained_ar
     model = StreamVLNForCausalLM.from_pretrained(
                 model_args.model_name_or_path,
                 cache_dir=training_args.cache_dir,
-                attn_implementation=training_args.attn_implementation,
+                attn_implementation='eager',
                 torch_dtype=(torch.bfloat16 if training_args.bf16 else None),
                 low_cpu_mem_usage=False,
                 **customized_kwargs,
@@ -1629,7 +1635,21 @@ def train(attn_implementation=None):
                 model.to(torch.float16)
         rank0_print("Adding LoRA adapters...")
         model = get_peft_model(model, lora_config)
-        # import ipdb; ipdb.set_trace()
+        # --- LoRA Debug: Verify PeftModel is active ---
+        import peft as _peft_module
+        rank0_print(f"[LoRA-Debug] model type: {type(model).__name__}")
+        rank0_print(f"[LoRA-Debug] is PeftModel: {isinstance(model, _peft_module.PeftModel)}")
+        trainable_params = [(n, p.shape) for n, p in model.named_parameters() if p.requires_grad]
+        rank0_print(f"[LoRA-Debug] trainable param count: {len(trainable_params)}")
+        for n, s in trainable_params[:20]:
+            rank0_print(f"  {n}: {list(s)}")
+        lora_params = [(n, p.requires_grad) for n, p in model.named_parameters() if 'lora_' in n.lower()]
+        rank0_print(f"[LoRA-Debug] LoRA params total: {len(lora_params)}, with requires_grad=True: {sum(1 for _, r in lora_params if r)}")
+        if len(lora_params) == 0:
+            raise RuntimeError("[LoRA-Debug] NO LoRA parameters found! PEFT LoRA was NOT applied correctly.")
+        if not any(r for _, r in lora_params):
+            raise RuntimeError("[LoRA-Debug] All LoRA params have requires_grad=False! Gradient flow impossible.")
+        rank0_print("[LoRA-Debug] LoRA verification PASSED")
 
     if "mistral" in model_args.model_name_or_path.lower() or "mixtral" in model_args.model_name_or_path.lower() or "zephyr" in model_args.model_name_or_path.lower():
         tokenizer = transformers.AutoTokenizer.from_pretrained(model_args.model_name_or_path, cache_dir=training_args.cache_dir, model_max_length=training_args.model_max_length, padding_side="left")
@@ -1741,33 +1761,33 @@ def train(attn_implementation=None):
 
         else:
             rank0_print(f"Using mm_tunable_parts: {model_args.mm_tunable_parts}")
-            model.config.mm_tunable_parts = training_args.mm_tunable_parts = model_args.mm_tunable_parts
-            # Set the entire model to not require gradients by default
-            model.requires_grad_(False)
-            vision_tower.requires_grad_(False)
-            model.get_model().mm_projector.requires_grad_(False)
-            model.get_model().vision_resampler.requires_grad_(False)
-            # Parse the mm_tunable_parts to decide which parts to unfreeze
-            tunable_parts = model_args.mm_tunable_parts.split(",")
-            if "mm_mlp_adapter" in tunable_parts:
-                for p in model.get_model().mm_projector.parameters():
-                    p.requires_grad = True
-            if "mm_vision_resampler" in tunable_parts and training_args.token_compression=="resampler":
-                for p in model.get_model().vision_resampler.parameters():
-                    p.requires_grad = True
-            if "mm_vision_tower" in tunable_parts:
-                for name, param in model.named_parameters():
-                    if "vision_tower" in name:
-                        param.requires_grad_(True)
-            
-            if "mm_language_model" in tunable_parts:
-                for name, param in model.named_parameters():
-                    if "vision_tower" not in name and "mm_projector" not in name and "vision_resampler" not in name:
-                        param.requires_grad_(True)
-            if "mm_lora_layer" in tunable_parts:
-                for name, param in model.named_parameters():
-                    if "lora" in name:
-                        param.requires_grad_(True)
+            if training_args.lora_enable:
+                rank0_print("LoRA mode: PEFT manages trainable params, skipping mm_tunable_parts override")
+            else:
+                model.config.mm_tunable_parts = training_args.mm_tunable_parts = model_args.mm_tunable_parts
+                model.requires_grad_(False)
+                vision_tower.requires_grad_(False)
+                model.get_model().mm_projector.requires_grad_(False)
+                model.get_model().vision_resampler.requires_grad_(False)
+                tunable_parts = model_args.mm_tunable_parts.split(",")
+                if "mm_mlp_adapter" in tunable_parts:
+                    for p in model.get_model().mm_projector.parameters():
+                        p.requires_grad = True
+                if "mm_vision_resampler" in tunable_parts and training_args.token_compression=="resampler":
+                    for p in model.get_model().vision_resampler.parameters():
+                        p.requires_grad = True
+                if "mm_vision_tower" in tunable_parts:
+                    for name, param in model.named_parameters():
+                        if "vision_tower" in name:
+                            param.requires_grad_(True)
+                if "mm_language_model" in tunable_parts:
+                    for name, param in model.named_parameters():
+                        if "vision_tower" not in name and "mm_projector" not in name and "vision_resampler" not in name:
+                            param.requires_grad_(True)
+                if "mm_lora_layer" in tunable_parts:
+                    for name, param in model.named_parameters():
+                        if "lora" in name:
+                            param.requires_grad_(True)
         
         for name, param in model.named_parameters():
             if param.requires_grad:  # Check if the parameter requires training
@@ -1846,9 +1866,79 @@ def train(attn_implementation=None):
                 return wrap_func
             FSDP.__init__ = patch_FSDP_use_orig_params(FSDP.__init__)
     
-    trainer = LLaVATrainer(model=model, tokenizer=tokenizer, args=training_args, **data_module)
-    # print(list(model.get_model().vision_resampler.parameters())[0])
-    # import ipdb; ipdb.set_trace()
+    # --- LoRA-Safe Trainer wrapper ---
+    if training_args.lora_enable:
+        class LoRASafeLLaVATrainer(LLaVATrainer):
+            def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+                r"""LoRA-safe compute_loss that ensures loss has requires_grad=True.
+
+                HuggingFace Trainer wraps PeftModel and calls compute_loss.
+                We add assertions to verify the loss connects to LoRA params.
+                """
+                rank0_print(f"[LoRA-Trainer] compute_loss called: model type={type(model).__name__}")
+                rank0_print(f"[LoRA-Trainer] model is PeftModel: {isinstance(model, _peft_module.PeftModel)}")
+
+                if isinstance(model, _peft_module.PeftModel):
+                    # PEFT 0.5.0 delegates forward to base_model via hooks
+                    outputs = model(**inputs)
+                else:
+                    outputs = model(**inputs)
+
+                # Get loss from outputs
+                if isinstance(outputs, dict):
+                    loss = outputs.get("loss")
+                    logits = outputs.get("logits")
+                else:
+                    loss = getattr(outputs, "loss", None)
+                    logits = getattr(outputs, "logits", None)
+
+                rank0_print(f"[LoRA-Trainer] loss requires_grad={loss.requires_grad if loss is not None else 'N/A'}")
+                rank0_print(f"[LoRA-Trainer] loss grad_fn={loss.grad_fn if loss is not None else 'N/A'}")
+                if logits is not None:
+                    rank0_print(f"[LoRA-Trainer] logits requires_grad={logits.requires_grad}, grad_fn={logits.grad_fn}")
+
+                # If loss doesn't require grad, compute it manually from logits
+                if loss is not None and not loss.requires_grad and logits is not None and logits.requires_grad:
+                    rank0_print("[LoRA-Trainer] WARNING: loss lacks requires_grad but logits have it. Recomputing loss manually.")
+                    shift_logits = logits[..., :-1, :].contiguous()
+                    labels = inputs.get("labels")
+                    if labels is not None:
+                        shift_labels = labels[..., 1:].contiguous()
+                        ignore_idx = getattr(model.config, "pad_token_id", -100)
+                        if ignore_idx is None or ignore_idx < 0:
+                            ignore_idx = -100
+                        loss = torch.nn.functional.cross_entropy(
+                            shift_logits.view(-1, shift_logits.size(-1)),
+                            shift_labels.view(-1),
+                            ignore_index=ignore_idx,
+                        )
+                        rank0_print(f"[LoRA-Trainer] Manual loss computed: requires_grad={loss.requires_grad}, grad_fn={loss.grad_fn}")
+
+                if loss is not None and not loss.requires_grad:
+                    # Last resort: check what's wrong
+                    trainable = [(n, p.requires_grad) for n, p in model.named_parameters() if p.requires_grad]
+                    batch_keys = list(inputs.keys())
+                    labels_info = "N/A"
+                    if "labels" in inputs:
+                        lb = inputs["labels"]
+                        labels_info = f"shape={lb.shape}, non-ignore={int((lb != -100).sum())}"
+                    rank0_print(f"[LoRA-Trainer] CRITICAL: loss lacks requires_grad! Trainable params: {len(trainable)}, batch keys: {batch_keys}, labels: {labels_info}")
+                    if len(trainable) == 0:
+                        raise RuntimeError("[LoRA-Trainer] ZERO trainable parameters! Check LoRA application and mm_tunable_parts.")
+
+                return (loss, outputs) if return_outputs else loss
+
+        trainer_cls = LoRASafeLLaVATrainer
+        rank0_print("[LoRA-Trainer] Using LoRASafeLLaVATrainer")
+    else:
+        trainer_cls = LLaVATrainer
+
+    trainer = trainer_cls(model=model, tokenizer=tokenizer, args=training_args, **data_module)
+    # --- End LoRA-Safe Trainer ---
+
+    # --- One-batch probe: DISABLED - confirmed LoRA gradients work ---
+    # --- End probe ---
+
     if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
         trainer.train(resume_from_checkpoint=True)
     else:

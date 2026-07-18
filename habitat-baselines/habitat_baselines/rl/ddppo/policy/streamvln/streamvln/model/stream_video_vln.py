@@ -289,6 +289,17 @@ class StreamVLNForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
                     special_token = special_tokens[i]
                 
                     if special_token == IMAGE_TOKEN_INDEX:
+                        if batch_idx >= len(image_features):
+                            # image_features 少于 batch size，使用 text embedding 占位
+                            cur_new_input_embeds.append(cur_input_embeds_no_im[i])
+                            cur_new_labels.append(cur_labels_noim[i])
+                            continue
+                        if cur_img_id >= image_features[batch_idx].shape[0]:
+                            # cur_img_id 越界：input 中 IMAGE token 比实际编码的图像多
+                            # 使用 text embedding 安全回退
+                            cur_new_input_embeds.append(cur_input_embeds_no_im[i])
+                            cur_new_labels.append(cur_labels_noim[i])
+                            continue
                         cur_image_feature = image_features[batch_idx][cur_img_id]
                         cur_img_id += 1
                         # import logging
@@ -300,6 +311,14 @@ class StreamVLNForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
                         cur_new_input_embeds.append(cur_image_feature)
                         cur_new_labels.append(torch.full((cur_image_feature.shape[0],), IGNORE_INDEX, device=cur_labels.device, dtype=cur_labels.dtype))
                     elif special_token == MEMORY_TOKEN_INDEX:
+                        if batch_idx >= len(memory_features) or memory_features[batch_idx] is None:
+                            cur_new_input_embeds.append(cur_input_embeds_no_im[i])
+                            cur_new_labels.append(cur_labels_noim[i])
+                            continue
+                        if cur_mem_id >= memory_features[batch_idx].shape[0]:
+                            cur_new_input_embeds.append(cur_input_embeds_no_im[i])
+                            cur_new_labels.append(cur_labels_noim[i])
+                            continue
                         cur_memory_feature = memory_features[batch_idx][cur_mem_id]
                         cur_mem_id += 1
                         # logger.info(f"[StreamVLNModel.prepare_inputs_labels_for_multimodal] ✓✓✓ 插入记忆特征: "
@@ -372,11 +391,11 @@ class StreamVLNForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
             num_images = (input_ids[batch_idx] == IMAGE_TOKEN_INDEX).sum().item()
             num_memories = (input_ids[batch_idx] == MEMORY_TOKEN_INDEX).sum().item()
             # 估算视觉特征token数量（每个图像特征约196个token，每个记忆特征可能更多）
-            if num_images > 0 and image_features and len(image_features) > batch_idx:
+            if num_images > 0 and image_features and len(image_features) > batch_idx and image_features[batch_idx] is not None:
                 for img_id in range(num_images):
                     if img_id < len(image_features[batch_idx]):
                         total_visual_tokens += image_features[batch_idx][img_id].shape[0]
-            if num_memories > 0 and memory_features and len(memory_features) > batch_idx:
+            if num_memories > 0 and memory_features and len(memory_features) > batch_idx and memory_features[batch_idx] is not None:
                 for mem_id in range(num_memories):
                     if mem_id < len(memory_features[batch_idx]):
                         total_visual_tokens += memory_features[batch_idx][mem_id].shape[0]

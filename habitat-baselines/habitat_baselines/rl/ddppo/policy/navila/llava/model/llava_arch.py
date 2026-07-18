@@ -331,7 +331,13 @@ class LlavaMetaForCausalLM(ABC):
         input_ids_copy = input_ids.clone()
         # kentang-mit@: Otherwise tokenizer out of bounds. Embeddings of image tokens will not be used.
         input_ids_copy[input_ids_copy == IMAGE_TOKEN_INDEX] = 0
-        input_embeds = self.llm.model.embed_tokens(input_ids_copy)
+        # Access embed_tokens robustly: unwrap PeftModel → HF causal LM → HF base model
+        _inner_llm = self.llm
+        if hasattr(_inner_llm, 'base_model') and hasattr(_inner_llm.base_model, 'model'):
+            _inner_llm = _inner_llm.base_model.model  # PeftModel → wrapped HF model
+        if hasattr(_inner_llm, 'model'):
+            _inner_llm = _inner_llm.model  # LlamaForCausalLM → LlamaModel
+        input_embeds = _inner_llm.embed_tokens(input_ids_copy)
 
         input_ids = [
             cur_input_ids[cur_attention_mask] for cur_input_ids, cur_attention_mask in zip(input_ids, attention_mask)

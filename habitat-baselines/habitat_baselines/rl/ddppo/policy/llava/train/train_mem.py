@@ -1,3 +1,4 @@
+from __future__ import annotations
 # Copyright 2024 NVIDIA CORPORATION & AFFILIATES
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,8 +19,8 @@
 
 from unittest import mock
 
-from ..train.train import train
-from ..train.transformer_normalize_monkey_patch import patched_normalize
+from llava.train.train import train
+from llava.train.transformer_normalize_monkey_patch import patched_normalize
 
 
 def __len__(self):

@@ -1,3 +1,4 @@
+from __future__ import annotations
 """ AutoResume callback.
 
 A transformer trainer callback for interfacing with ADLR's AutoResume SDK.
