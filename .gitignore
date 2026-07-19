@@ -241,3 +241,5 @@ videos/
 snapshots/
 slurm-*.out
 slurm-*.err
+!habitat-lab/habitat/datasets/
+!habitat-lab/habitat/datasets/**
