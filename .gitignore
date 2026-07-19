@@ -243,3 +243,5 @@ slurm-*.out
 slurm-*.err
 !habitat-lab/habitat/datasets/
 !habitat-lab/habitat/datasets/**
+!habitat-baselines/habitat_baselines/il/data/
+!habitat-baselines/habitat_baselines/il/data/**
